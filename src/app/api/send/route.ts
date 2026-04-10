@@ -36,6 +36,7 @@ async function deriveSigningKey(secret: string, date: string): Promise<ArrayBuff
 }
 
 async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<void> {
+  const data = new Uint8Array(body); // ArrayBuffer 기반으로 정규화 (TS 5.9+ 타입 호환)
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
@@ -45,7 +46,7 @@ async function uploadToR2(key: string, body: Uint8Array, contentType: string): P
   const date = datetime.slice(0, 8);
   const host = `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
   const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
-  const payloadHash = await sha256Hex(body);
+  const payloadHash = await sha256Hex(data);
 
   const canonicalRequest = [
     "PUT",
@@ -80,7 +81,7 @@ async function uploadToR2(key: string, body: Uint8Array, contentType: string): P
       "x-amz-content-sha256": payloadHash,
       Authorization: authorization,
     },
-    body,
+    body: data,
   });
 
   if (!res.ok) throw new Error(`R2 업로드 실패: ${await res.text()}`);
