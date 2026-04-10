@@ -8,7 +8,7 @@ const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
 const R2_BUCKET = "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
-async function sha256Hex(data: Uint8Array | string): Promise<string> {
+async function sha256Hex(data: Uint8Array<ArrayBuffer> | string): Promise<string> {
   const buf = typeof data === "string" ? new TextEncoder().encode(data) : data;
   const hash = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -20,7 +20,7 @@ async function hmacHex(key: ArrayBuffer, data: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
+async function hmacRaw(key: ArrayBuffer | Uint8Array<ArrayBuffer>, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
 }
