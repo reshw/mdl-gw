@@ -263,6 +263,12 @@ export default function MailPage() {
   }
 
   async function handleToggleLabel(mailId: string, labelId: string, hasLabel: boolean) {
+    // 낙관적 업데이트: Firestore 응답 기다리지 않고 즉시 반영
+    setSelected((prev) => {
+      if (!prev || prev.id !== mailId) return prev;
+      const cur = prev.labels ?? [];
+      return { ...prev, labels: hasLabel ? cur.filter((l) => l !== labelId) : [...cur, labelId] };
+    });
     if (hasLabel) {
       await removeLabelFromMail(mailId, labelId);
     } else {
@@ -652,7 +658,7 @@ export default function MailPage() {
                                 <button
                                   key={label.id}
                                   onClick={() => handleToggleLabel(selected.id, label.id, hasLabel)}
-                                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50"
+                                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                                 >
                                   <span className={`w-2 h-2 rounded-full shrink-0 ${colorConf.dot}`} />
                                   <span className="flex-1 text-left">{label.name}</span>
