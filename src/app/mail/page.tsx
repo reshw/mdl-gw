@@ -279,8 +279,8 @@ export default function MailPage() {
       setSelected(null);
       setCheckedIds(new Set());
     }
-    setShowMobileSidebar(false);
     setMobilePane("list");
+    setTimeout(() => setShowMobileSidebar(false), 150);
   }
 
   const folderLabel: Record<Folder, string> = {
@@ -333,8 +333,8 @@ export default function MailPage() {
         {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (
           <button
             key={f}
-            onClick={() => { setFolder(f); setActiveLabel(null); setShowMobileSidebar(false); setMobilePane("list"); }}
-            className={`text-left text-sm px-3 py-2 rounded-lg ${folder === f && !activeLabel ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
+            onClick={() => { setFolder(f); setActiveLabel(null); setMobilePane("list"); setTimeout(() => setShowMobileSidebar(false), 150); }}
+            className={`text-left text-sm px-3 py-2 rounded-lg active:bg-zinc-100 ${folder === f && !activeLabel ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
           >
             {folderLabel[f]}
             {f === "inbox" && inboxUnread > 0 && (
@@ -408,7 +408,7 @@ export default function MailPage() {
               <button
                 key={label.id}
                 onClick={() => handleActivateLabel(label.id)}
-                className={`group w-full text-left text-sm px-3 py-1.5 rounded-lg flex items-center gap-2 ${isActive ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
+                className={`group w-full text-left text-sm px-3 py-1.5 rounded-lg flex items-center gap-2 active:bg-zinc-100 ${isActive ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${colorConf.dot}`} />
                 <span className="flex-1 truncate text-xs">{label.name}</span>
