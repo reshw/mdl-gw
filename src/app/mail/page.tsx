@@ -204,7 +204,7 @@ export default function MailPage() {
   const folderLabel: Record<Folder, string> = {
     inbox: "받은편지함",
     sent: "보낸편지함",
-    draft: "임시저장함",
+    draft: "임시보관함",
     trash: "휴지통",
   };
 
