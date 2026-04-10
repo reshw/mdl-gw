@@ -47,6 +47,10 @@ export default function MailPage() {
   const [showLabelDropdown, setShowLabelDropdown] = useState(false);
   const labelDropdownRef = useRef<HTMLDivElement>(null);
 
+  // 모바일 상태
+  const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
@@ -111,6 +115,7 @@ export default function MailPage() {
 
   async function handleSelect(mail: Mail) {
     setSelected(mail);
+    setMobilePane("viewer");
     setShowLabelDropdown(false);
     if (!mail.read) await markAsRead(mail);
   }
@@ -136,6 +141,8 @@ export default function MailPage() {
     setEditingDraft(draft);
     setComposing(true);
   }
+
+
 
   function handleComposeClose() {
     setComposing(false);
@@ -272,6 +279,8 @@ export default function MailPage() {
       setSelected(null);
       setCheckedIds(new Set());
     }
+    setShowMobileSidebar(false);
+    setMobilePane("list");
   }
 
   const folderLabel: Record<Folder, string> = {
@@ -311,15 +320,20 @@ export default function MailPage() {
 
   return (
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
+      {/* 모바일 사이드바 오버레이 */}
+      {showMobileSidebar && (
+        <div className="fixed inset-0 bg-black/20 z-30 lg:hidden" onClick={() => setShowMobileSidebar(false)} />
+      )}
+
       {/* 사이드바 */}
-      <aside className="w-52 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1 overflow-y-auto">
+      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1 overflow-y-auto transition-transform duration-200 lg:static lg:translate-x-0 lg:w-52 ${showMobileSidebar ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="text-sm font-semibold text-zinc-900 mb-4">mdl.kr 메일</div>
 
         {/* 폴더 목록 */}
         {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (
           <button
             key={f}
-            onClick={() => { setFolder(f); setActiveLabel(null); }}
+            onClick={() => { setFolder(f); setActiveLabel(null); setShowMobileSidebar(false); setMobilePane("list"); }}
             className={`text-left text-sm px-3 py-2 rounded-lg ${folder === f && !activeLabel ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
           >
             {folderLabel[f]}
@@ -441,17 +455,26 @@ export default function MailPage() {
       </aside>
 
       {/* 메일 목록 */}
-      <div className="w-80 border-r border-zinc-200 bg-white flex flex-col">
-        <div className="border-b border-zinc-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-900 flex items-center gap-2">
-            {activeLabelObj && (
-              <span className={`w-2 h-2 rounded-full ${LABEL_COLORS.find((c) => c.value === activeLabelObj.color)?.dot ?? "bg-zinc-400"}`} />
-            )}
-            {listTitle}
-          </h2>
+      <div className={`border-r border-zinc-200 bg-white flex-col w-full lg:w-80 ${mobilePane === "viewer" ? "hidden lg:flex" : "flex"}`}>
+        <div className="border-b border-zinc-200 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setShowMobileSidebar(true)}
+              className="lg:hidden text-zinc-500 hover:text-zinc-900 text-lg leading-none shrink-0"
+              aria-label="메뉴"
+            >
+              ☰
+            </button>
+            <h2 className="text-sm font-semibold text-zinc-900 flex items-center gap-2 truncate">
+              {activeLabelObj && (
+                <span className={`w-2 h-2 rounded-full shrink-0 ${LABEL_COLORS.find((c) => c.value === activeLabelObj.color)?.dot ?? "bg-zinc-400"}`} />
+              )}
+              {listTitle}
+            </h2>
+          </div>
           <button
             onClick={() => { setEditingDraft(undefined); setComposeInit(undefined); setComposing(true); }}
-            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700"
+            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 shrink-0"
           >
             메일 쓰기
           </button>
@@ -575,9 +598,18 @@ export default function MailPage() {
       </div>
 
       {/* 메일 뷰어 */}
-      <main className="flex-1 flex flex-col min-h-0">
+      <main className={`flex-col min-h-0 flex-1 ${mobilePane === "list" ? "hidden lg:flex" : "flex"}`}>
+        {/* 모바일 뒤로가기 버튼 */}
+        <div className="lg:hidden border-b border-zinc-200 px-4 py-2 shrink-0">
+          <button
+            onClick={() => setMobilePane("list")}
+            className="flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+          >
+            ← 목록
+          </button>
+        </div>
         {selected && folder !== "draft" ? (
-          <div className="flex-1 overflow-y-auto p-8 min-h-0">
+          <div className="flex-1 overflow-y-auto p-4 lg:p-8 min-h-0">
             <div className="flex items-start justify-between mb-4">
               <h1 className="text-xl font-semibold text-zinc-900">{selected.subject}</h1>
               <div className="flex gap-2 shrink-0 ml-4 flex-wrap justify-end">

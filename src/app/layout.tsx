@@ -18,6 +18,12 @@ export const metadata: Metadata = {
   description: "mdl.kr 그룹웨어 메일",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

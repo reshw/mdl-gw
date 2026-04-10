@@ -149,8 +149,8 @@ export default function ComposeModal({ onClose, draft, init }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-end justify-end p-6 z-50">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: "620px" }}>
+    <div className="fixed inset-0 bg-black/30 flex items-end justify-end p-0 lg:p-6 z-50">
+      <div className="w-full max-w-2xl bg-white rounded-t-2xl lg:rounded-2xl shadow-xl flex flex-col h-[90dvh] lg:h-[620px]">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
           <span className="text-sm font-medium text-zinc-900">새 메일</span>
