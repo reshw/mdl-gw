@@ -606,40 +606,40 @@ export default function MailPage() {
       {/* 메일 뷰어 */}
       <main className={`flex-col min-h-0 flex-1 ${mobilePane === "list" ? "hidden lg:flex" : "flex"}`}>
         {/* 모바일 뒤로가기 버튼 */}
-        <div className="lg:hidden border-b border-zinc-200 px-4 py-2 shrink-0">
+        <div className="lg:hidden border-b border-zinc-200 px-3 py-2.5 shrink-0">
           <button
             onClick={() => setMobilePane("list")}
-            className="flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+            className="flex items-center gap-1.5 text-sm font-medium text-zinc-600 active:text-zinc-900 px-2 py-1.5 rounded-lg active:bg-zinc-100"
           >
             ← 목록
           </button>
         </div>
         {selected && folder !== "draft" ? (
           <div className="flex-1 overflow-y-auto p-4 lg:p-8 min-h-0">
-            <div className="flex items-start justify-between mb-4">
-              <h1 className="text-xl font-semibold text-zinc-900">{selected.subject}</h1>
-              <div className="flex gap-2 shrink-0 ml-4 flex-wrap justify-end">
+            <div className="flex flex-col gap-3 mb-4">
+              <h1 className="text-xl font-semibold text-zinc-900 leading-snug">{selected.subject}</h1>
+              <div className="flex gap-2 flex-wrap">
                 {folder === "trash" ? (
                   <>
-                    <button onClick={() => handleRestore(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">복원</button>
-                    <button onClick={() => handlePermanentDelete(selected)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50">영구 삭제</button>
+                    <button onClick={() => handleRestore(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">복원</button>
+                    <button onClick={() => handlePermanentDelete(selected)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 active:bg-red-100">영구 삭제</button>
                   </>
                 ) : (
                   <>
                     {folder === "inbox" && (
-                      <button onClick={() => handleMarkUnread(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">안읽음</button>
+                      <button onClick={() => handleMarkUnread(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">안읽음</button>
                     )}
-                    <button onClick={() => handleReply(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">답장</button>
+                    <button onClick={() => handleReply(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">답장</button>
                     {selected.cc && (
-                      <button onClick={() => handleReplyAll(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">전체답장</button>
+                      <button onClick={() => handleReplyAll(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전체답장</button>
                     )}
-                    <button onClick={() => handleForward(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50">전달</button>
+                    <button onClick={() => handleForward(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전달</button>
 
                     {/* 라벨 드롭다운 */}
                     <div className="relative" ref={labelDropdownRef}>
                       <button
                         onClick={() => setShowLabelDropdown((v) => !v)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 ${showLabelDropdown ? "border-zinc-400 text-zinc-900 bg-zinc-50" : "border-zinc-200 text-zinc-600"}`}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 active:bg-zinc-100 ${showLabelDropdown ? "border-zinc-400 text-zinc-900 bg-zinc-50" : "border-zinc-200 text-zinc-600"}`}
                       >
                         라벨
                         {(selected.labels?.length ?? 0) > 0 && (
