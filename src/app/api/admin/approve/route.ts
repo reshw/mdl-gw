@@ -3,6 +3,35 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 const ADMIN_EMAIL = "reshw@naver.com";
+const CF_ZONE_ID = "de579473b012d58c2fdf7390fb83d130";
+const CF_WORKER_NAME = "mailer-worker";
+
+async function addEmailRoutingRule(email: string) {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!token) throw new Error("CLOUDFLARE_API_TOKEN 없음");
+
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/email/routing/rules`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: email,
+        enabled: true,
+        matchers: [{ type: "literal", field: "to", value: email }],
+        actions: [{ type: "worker", value: [CF_WORKER_NAME] }],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.json();
+    throw new Error(JSON.stringify(body));
+  }
+}
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -25,11 +54,15 @@ export async function POST(req: NextRequest) {
 
   const { id, name, password } = doc.data()!;
 
+  const email = `${id}@mdl.kr`;
+
   await adminAuth.createUser({
-    email: `${id}@mdl.kr`,
+    email,
     password,
     displayName: name,
   });
+
+  await addEmailRoutingRule(email);
 
   await docRef.update({
     status: "approved",
@@ -37,5 +70,5 @@ export async function POST(req: NextRequest) {
     approvedAt: new Date().toISOString(),
   });
 
-  return NextResponse.json({ ok: true, email: `${id}@mdl.kr` });
+  return NextResponse.json({ ok: true, email });
 }
