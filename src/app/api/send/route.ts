@@ -8,9 +8,10 @@ const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
 const R2_BUCKET = "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
-async function sha256Hex(data: Uint8Array<ArrayBuffer> | string): Promise<string> {
-  const buf = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  const hash = await crypto.subtle.digest("SHA-256", buf);
+async function sha256Hex(data: Uint8Array | string): Promise<string> {
+  // new Uint8Array(src) 는 항상 ArrayBuffer 기반으로 복사 — TS 5.9+ 타입 호환
+  const arr = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+  const hash = await crypto.subtle.digest("SHA-256", arr);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -20,8 +21,10 @@ async function hmacHex(key: ArrayBuffer, data: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmacRaw(key: ArrayBuffer | Uint8Array<ArrayBuffer>, data: string): Promise<ArrayBuffer> {
-  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
+  // Uint8Array → new Uint8Array(src) 로 ArrayBuffer 기반으로 정규화
+  const k = key instanceof Uint8Array ? new Uint8Array(key) : key;
+  const cryptoKey = await crypto.subtle.importKey("raw", k, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
 }
 
