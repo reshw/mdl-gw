@@ -175,13 +175,20 @@ export async function POST(req: NextRequest) {
         createdAt: sentAt,
       });
     } else {
+      // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
+      const externalCcList = ccList.filter((c) => !c.endsWith("@mdl.kr"));
+      const externalCcStr = externalCcList.length > 0 ? externalCcList.join(", ") : undefined;
+      const bccList: string[] = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
+      const externalBccList = bccList.filter((c) => !c.endsWith("@mdl.kr"));
+      const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
+
       await resend.emails.send({
         from,
         to: [recipient],
         // 전체 수신자 목록을 To 헤더에 표시 (수신자 눈에는 그룹메일처럼 보임)
         headers: toList.length > 1 ? { "To": toStr } : undefined,
-        ...(ccStr ? { cc: ccStr } : {}),
-        ...(bcc ? { bcc: Array.isArray(bcc) ? bcc.join(", ") : bcc } : {}),
+        ...(externalCcStr ? { cc: externalCcStr } : {}),
+        ...(externalBccStr ? { bcc: externalBccStr } : {}),
         subject,
         text: text ?? "",
         html: trackedHtml,

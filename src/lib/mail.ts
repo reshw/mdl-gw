@@ -30,6 +30,7 @@ export interface Mail {
   trash?: boolean;
   firstReadAt?: string;
   trackIds?: Record<string, string>;
+  labels?: string[];
 }
 
 export function subscribeMails(

@@ -17,6 +17,8 @@ interface Props {
 export default function EmailChipInput({ values, onChange, placeholder, contacts = [] }: Props) {
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const q = input.trim().toLowerCase();
@@ -65,11 +67,41 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
   }
 
   function handleBlur() {
-    // 드롭다운 클릭 처리를 위해 약간 지연
     setTimeout(() => {
       if (input.includes("@")) addChip(input);
       setOpen(false);
     }, 150);
+  }
+
+  function handleDragStart(e: React.DragEvent, i: number) {
+    setDragIndex(i);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragOver(e: React.DragEvent, i: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== i) setDragOverIndex(i);
+  }
+
+  function handleDrop(e: React.DragEvent, i: number) {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === i) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const next = [...values];
+    const [removed] = next.splice(dragIndex, 1);
+    next.splice(i, 0, removed);
+    onChange(next);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
   }
 
   return (
@@ -79,7 +111,17 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
         onClick={() => inputRef.current?.focus()}
       >
         {values.map((email, i) => (
-          <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-1">
+          <span
+            key={i}
+            draggable
+            onDragStart={(e) => handleDragStart(e, i)}
+            onDragOver={(e) => handleDragOver(e, i)}
+            onDrop={(e) => handleDrop(e, i)}
+            onDragEnd={handleDragEnd}
+            className={`flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-1 cursor-grab active:cursor-grabbing select-none transition-opacity
+              ${dragIndex === i ? "opacity-40" : ""}
+              ${dragOverIndex === i && dragIndex !== i ? "ring-2 ring-zinc-400 ring-offset-1" : ""}`}
+          >
             {email}
             <button
               type="button"
