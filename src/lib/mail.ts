@@ -5,6 +5,7 @@ import {
   where,
   onSnapshot,
   doc,
+  getDoc,
   updateDoc,
   addDoc,
   setDoc,
@@ -28,6 +29,7 @@ export interface Mail {
   failReason?: string;
   trash?: boolean;
   firstReadAt?: string;
+  trackIds?: Record<string, string>;
 }
 
 export function subscribeMails(
@@ -166,6 +168,25 @@ export async function deleteDraft(draftId: string) {
   await deleteDoc(doc(db, "drafts", draftId));
 }
 
+export interface TrackingStatus {
+  recipient: string;
+  sentAt: string;
+  openedAt: string | null;
+}
+
+export async function getTrackingStatus(trackIds: Record<string, string>): Promise<Record<string, TrackingStatus>> {
+  const result: Record<string, TrackingStatus> = {};
+  await Promise.all(
+    Object.entries(trackIds).map(async ([recipient, trackId]) => {
+      const snap = await getDoc(doc(db, "tracking", trackId));
+      if (snap.exists()) {
+        result[recipient] = snap.data() as TrackingStatus;
+      }
+    })
+  );
+  return result;
+}
+
 export async function saveSentMail(data: {
   to: string;
   cc?: string;
@@ -176,6 +197,7 @@ export async function saveSentMail(data: {
   attachmentNames: string[];
   failed?: boolean;
   failReason?: string;
+  trackIds?: Record<string, string>;
 }) {
   await addDoc(collection(db, "mails"), {
     to: data.to,
@@ -190,5 +212,6 @@ export async function saveSentMail(data: {
     attachments: data.attachmentNames.map((name) => ({ name })),
     createdAt: new Date().toISOString(),
     ...(data.failed ? { failed: true, failReason: data.failReason ?? "" } : {}),
+    ...(data.trackIds ? { trackIds: data.trackIds } : {}),
   });
 }

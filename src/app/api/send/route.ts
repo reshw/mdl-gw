@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const PROJECT_ID = "emailer-71608";
-const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -25,42 +23,57 @@ export async function POST(req: NextRequest) {
   }
 
   const { to, cc, bcc, subject, text, html, attachments } = await req.json();
-  const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
   if (!to || !subject) return NextResponse.json({ error: "받는 사람과 제목을 입력해주세요." }, { status: 400 });
 
-  // Resend로 발송
-  const { error } = await resend.emails.send({
-    from: fromEmail.endsWith("@mdl.kr")
-      ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
-      : `noreply@mdl.kr`,
-    to,
-    ...(cc ? { cc } : {}),
-    ...(bcc ? { bcc } : {}),
-    subject,
-    text: text ?? "",
-    html: html ?? text ?? "",
-    attachments: attachments ?? [],
-  });
+  const toList: string[] = Array.isArray(to) ? to : [to];
+  const ccList: string[] = cc ? (Array.isArray(cc) ? cc : [cc]) : [];
+  const toStr = toList.join(", ");
+  const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
+  const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
 
-  const toStr = Array.isArray(to) ? to.join(", ") : to;
-  const ccStr = cc ? (Array.isArray(cc) ? cc.join(", ") : cc) : undefined;
+  const from = fromEmail.endsWith("@mdl.kr")
+    ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
+    : "noreply@mdl.kr";
 
-  if (error) {
-    return NextResponse.json({
-      ok: true,
-      sentMail: {
-        to: toStr,
-        ...(ccStr ? { cc: ccStr } : {}),
-        from: fromEmail,
-        subject,
-        text: text ?? "",
-        html: html ?? text ?? "",
-        attachmentNames,
-        failed: true,
-        failReason: error.message,
-      },
+  // 트래킹 픽셀 베이스 URL
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const baseUrl = `${proto}://${host}`;
+
+  const sentAt = new Date().toISOString();
+  const trackIds: Record<string, string> = {};
+
+  // To 수신자별 개별 발송 + 픽셀 삽입
+  for (const recipient of toList) {
+    const trackId = crypto.randomUUID();
+    trackIds[recipient] = trackId;
+
+    const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
+    const trackedHtml = (html ?? text ?? "") + pixel;
+
+    // Firestore에 트래킹 문서 생성
+    await adminDb.collection("tracking").doc(trackId).set({
+      recipient,
+      sentAt,
+      openedAt: null,
+    });
+
+    await resend.emails.send({
+      from,
+      to: [recipient],
+      // 전체 수신자 목록을 To 헤더에 표시 (수신자 눈에는 그룹메일처럼 보임)
+      headers: toList.length > 1 ? { "To": toStr } : undefined,
+      ...(ccStr ? { cc: ccStr } : {}),
+      ...(bcc ? { bcc: Array.isArray(bcc) ? bcc.join(", ") : bcc } : {}),
+      subject,
+      text: text ?? "",
+      html: trackedHtml,
+      attachments: attachments ?? [],
     });
   }
+
+  // CC 수신자는 첫 번째 발송에 포함됐으므로 별도 처리 불필요
+  // (CC는 각 To 수신자 메일에 함께 들어감)
 
   return NextResponse.json({
     ok: true,
@@ -72,6 +85,7 @@ export async function POST(req: NextRequest) {
       text: text ?? "",
       html: html ?? text ?? "",
       attachmentNames,
+      trackIds,
     },
   });
 }

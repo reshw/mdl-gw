@@ -8,8 +8,8 @@ import { auth } from "@/lib/firebase";
 import {
   subscribeMails, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
   subscribeTrash, moveToTrash, restoreFromTrash, permanentDelete,
-  subscribeInboxUnread,
-  type Mail, type Draft,
+  subscribeInboxUnread, getTrackingStatus,
+  type Mail, type Draft, type TrackingStatus,
 } from "@/lib/mail";
 import ComposeModal from "@/components/ComposeModal";
 import { addPersonalContact } from "@/lib/contacts";
@@ -32,6 +32,7 @@ export default function MailPage() {
   const [quickSaving, setQuickSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [trackingStatus, setTrackingStatus] = useState<Record<string, TrackingStatus> | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -64,6 +65,13 @@ export default function MailPage() {
     const unsub = subscribeInboxUnread(user.email, setInboxUnread);
     return () => unsub();
   }, [user]);
+
+  useEffect(() => {
+    setTrackingStatus(null);
+    if (folder === "sent" && selected?.trackIds && Object.keys(selected.trackIds).length > 0) {
+      getTrackingStatus(selected.trackIds).then(setTrackingStatus);
+    }
+  }, [selected, folder]);
 
   if (loading) return null;
   if (!user) return null;
@@ -467,18 +475,32 @@ export default function MailPage() {
               <div className="flex gap-2">
                 <span className="shrink-0">받는 사람:</span>
                 <div className="flex flex-wrap gap-1">
-                  {selected.to.split(",").map((addr, i) => (
-                    <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-0.5">
-                      {addr.trim()}
-                      <button
-                        onClick={() => setQuickAdd({ email: addr.trim(), name: "" })}
-                        title="연락처 추가"
-                        className="text-zinc-300 hover:text-zinc-500 leading-none"
-                      >
-                        +
-                      </button>
-                    </span>
-                  ))}
+                  {selected.to.split(",").map((addr, i) => {
+                    const email = addr.trim();
+                    const ts = trackingStatus?.[email];
+                    return (
+                      <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-0.5">
+                        {email}
+                        {folder === "sent" && selected.trackIds && (
+                          ts === undefined && trackingStatus !== null ? null :
+                          ts?.openedAt ? (
+                            <span className="text-green-600 font-medium" title={`읽음: ${new Date(ts.openedAt).toLocaleString("ko-KR")}`}>
+                              ✓ {new Date(ts.openedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          ) : trackingStatus !== null ? (
+                            <span className="text-zinc-400">○ 미확인</span>
+                          ) : null
+                        )}
+                        <button
+                          onClick={() => setQuickAdd({ email, name: "" })}
+                          title="연락처 추가"
+                          className="text-zinc-300 hover:text-zinc-500 leading-none"
+                        >
+                          +
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
               {selected.cc && (
