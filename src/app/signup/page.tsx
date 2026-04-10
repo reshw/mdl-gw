@@ -1,0 +1,134 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { sha256 } from "@/lib/hash";
+
+export default function SignupPage() {
+  const router = useRouter();
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [idStatus, setIdStatus] = useState<"idle" | "checking" | "ok" | "taken" | "error">("idle");
+  const [idMessage, setIdMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const checkId = useCallback(async (value: string) => {
+    if (!value) { setIdStatus("idle"); setIdMessage(""); return; }
+    setIdStatus("checking");
+    const res = await fetch(`/api/check-id?id=${encodeURIComponent(value)}`);
+    const data = await res.json();
+    if (data.error) {
+      setIdStatus("error");
+      setIdMessage(data.error);
+    } else if (data.available) {
+      setIdStatus("ok");
+      setIdMessage(`${value}@mdl.kr 사용 가능`);
+    } else {
+      setIdStatus("taken");
+      setIdMessage("이미 사용 중인 아이디입니다.");
+    }
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (idStatus !== "ok") { setError("아이디 중복 확인을 해주세요."); return; }
+    setError("");
+    setLoading(true);
+    try {
+      const hashedPassword = await sha256(password);
+      const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name, password: hashedPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); return; }
+      setDone(true);
+    } catch {
+      setError("오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 text-center">
+          <p className="text-zinc-900 font-medium mb-2">가입 신청 완료</p>
+          <p className="text-sm text-zinc-500 mb-6">관리자 승인 후 로그인 가능합니다.</p>
+          <button onClick={() => router.push("/")} className="text-sm text-zinc-500 hover:text-zinc-900">
+            로그인으로 돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8">
+        <h1 className="text-xl font-semibold text-zinc-900 mb-6">mdl.kr 가입 신청</h1>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="아이디 (영문 소문자/숫자)"
+                value={id}
+                onChange={(e) => { setId(e.target.value); setIdStatus("idle"); setIdMessage(""); }}
+                required
+                className="flex-1 rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={() => checkId(id)}
+                disabled={!id || idStatus === "checking"}
+                className="rounded-lg border border-zinc-200 px-3 py-2.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 shrink-0"
+              >
+                중복확인
+              </button>
+            </div>
+            {idMessage && (
+              <p className={`text-xs mt-1 ${idStatus === "ok" ? "text-green-600" : "text-red-500"}`}>
+                {idMessage}
+              </p>
+            )}
+            <p className="text-xs text-zinc-400 mt-1">가입 후 이메일: {id || "아이디"}@mdl.kr</p>
+          </div>
+          <input
+            type="text"
+            placeholder="이름"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+          />
+          <input
+            type="password"
+            placeholder="비밀번호"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+            className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+          />
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          >
+            {loading ? "신청 중..." : "가입 신청"}
+          </button>
+        </form>
+        <button onClick={() => router.push("/")} className="w-full mt-4 text-sm text-zinc-400 hover:text-zinc-600">
+          로그인으로 돌아가기
+        </button>
+      </div>
+    </div>
+  );
+}

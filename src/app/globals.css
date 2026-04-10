@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Jodit 에디터 본문 리스트/기본 스타일 복원 */
+@layer base {
+  .jodit-wysiwyg ul,
+  .jodit-wysiwyg ol {
+    padding-left: 1.5em;
+    margin: 0.5em 0;
+  }
+  .jodit-wysiwyg ul {
+    list-style-type: disc;
+  }
+  .jodit-wysiwyg ol {
+    list-style-type: decimal;
+  }
+  .jodit-wysiwyg li {
+    display: list-item;
+  }
+}
+
+/* Jodit 다이얼로그/팝업 텍스트 색상 */
+.jodit-dialog,
+.jodit-popup,
+.jodit-context-menu,
+.jodit-toolbar__box,
+.jodit-ui-input__label,
+.jodit-ui-input__input,
+.jodit-ui-select__select,
+.jodit-dialog__header-title {
+  color: #111111 !important;
+}
+
+.jodit-ui-input__input,
+.jodit-ui-select__select {
+  color: #111111 !important;
+  background: #ffffff !important;
+}
