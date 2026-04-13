@@ -17,7 +17,7 @@ service cloud.firestore {
 
     // 라벨 — 본인 라벨만
     match /labels/{labelId} {
-      allow read, delete: if request.auth != null
+      allow read, update, delete: if request.auth != null
         && request.auth.token.email == resource.data.userEmail;
       allow create: if request.auth != null
         && request.auth.token.email == request.resource.data.userEmail;

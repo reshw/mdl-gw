@@ -15,6 +15,20 @@ export const LABEL_COLORS: { value: string; dot: string; pill: string }[] = [
   { value: "zinc",   dot: "bg-zinc-400",   pill: "bg-zinc-100 text-zinc-600 border-zinc-200" },
 ];
 
+/** color가 "#rrggbb" 형태면 인라인 스타일, 아니면 Tailwind 클래스 반환 */
+export function resolveLabelColor(color: string) {
+  if (color.startsWith("#")) {
+    return {
+      dotClass: "",
+      dotStyle: { backgroundColor: color },
+      pillClass: "border",
+      pillStyle: { color, backgroundColor: color + "22", borderColor: color + "55" },
+    };
+  }
+  const c = LABEL_COLORS.find((x) => x.value === color) ?? LABEL_COLORS[6];
+  return { dotClass: c.dot, dotStyle: undefined, pillClass: c.pill, pillStyle: undefined };
+}
+
 export interface Label {
   id: string;
   userEmail: string;
@@ -34,6 +48,10 @@ export function subscribeLabels(userEmail: string, callback: (labels: Label[]) =
 
 export async function createLabel(userEmail: string, name: string, color: string): Promise<void> {
   await addDoc(collection(db, "labels"), { userEmail, name, color });
+}
+
+export async function updateLabel(labelId: string, name: string, color: string): Promise<void> {
+  await updateDoc(doc(db, "labels", labelId), { name, color });
 }
 
 export async function deleteLabel(labelId: string): Promise<void> {

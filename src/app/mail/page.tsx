@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Funnel, Mail as MailIcon, MailOpen, Square, CheckSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { signOut } from "firebase/auth";
@@ -12,8 +13,8 @@ import {
   type Mail, type Draft, type TrackingStatus,
 } from "@/lib/mail";
 import {
-  subscribeLabels, createLabel, deleteLabel, addLabelToMail, removeLabelFromMail,
-  LABEL_COLORS, type Label,
+  subscribeLabels, createLabel, updateLabel, deleteLabel, addLabelToMail, removeLabelFromMail,
+  LABEL_COLORS, resolveLabelColor, type Label,
 } from "@/lib/labels";
 import ComposeModal from "@/components/ComposeModal";
 import { addPersonalContact } from "@/lib/contacts";
@@ -48,6 +49,17 @@ export default function MailPage() {
   const [newLabelColor, setNewLabelColor] = useState("blue");
   const [showLabelDropdown, setShowLabelDropdown] = useState(false);
   const labelDropdownRef = useRef<HTMLDivElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 라벨 편집/삭제 모달
+  const [labelMenuId, setLabelMenuId] = useState<string | null>(null);
+  const [labelMenuPos, setLabelMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const labelMenuRef = useRef<HTMLDivElement>(null);
+  const [editLabelModal, setEditLabelModal] = useState<{ id: string; name: string; color: string } | null>(null);
+  const editColorInputRef = useRef<HTMLInputElement>(null);
+  const [deleteLabelConfirm, setDeleteLabelConfirm] = useState<Label | null>(null);
 
   // 모바일 상태
   const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
@@ -112,6 +124,31 @@ export default function MailPage() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [showLabelDropdown]);
 
+  // 라벨 ... 메뉴 외부 클릭 닫기
+  useEffect(() => {
+    if (!labelMenuId) return;
+    function onClickOutside(e: MouseEvent) {
+      if (labelMenuRef.current && !labelMenuRef.current.contains(e.target as Node)) {
+        setLabelMenuId(null);
+        setLabelMenuPos(null);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [labelMenuId]);
+
+  // 필터 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    if (!showFilterDropdown) return;
+    function onClickOutside(e: MouseEvent) {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setShowFilterDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showFilterDropdown]);
+
   if (loading) return null;
   if (!user) return null;
 
@@ -130,6 +167,12 @@ export default function MailPage() {
   async function handleBulkMarkUnread() {
     await Promise.all([...checkedIds].map((id) => markAsUnread(id)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
+    setCheckedIds(new Set());
+  }
+
+  async function handleBulkMarkRead() {
+    const targets = displayedMails.filter((m) => checkedIds.has(m.id) && !m.read);
+    await Promise.all(targets.map((m) => markAsRead(m)));
     setCheckedIds(new Set());
   }
 
@@ -259,9 +302,16 @@ export default function MailPage() {
     setShowLabelCreate(false);
   }
 
+  async function handleUpdateLabel() {
+    if (!editLabelModal || !editLabelModal.name.trim()) return;
+    await updateLabel(editLabelModal.id, editLabelModal.name.trim(), editLabelModal.color);
+    setEditLabelModal(null);
+  }
+
   async function handleDeleteLabel(labelId: string) {
     await deleteLabel(labelId);
     if (activeLabel === labelId) setActiveLabel(null);
+    setDeleteLabelConfirm(null);
   }
 
   async function handleToggleLabel(mailId: string, labelId: string, hasLabel: boolean) {
@@ -393,7 +443,7 @@ export default function MailPage() {
                 autoFocus
                 className="w-full px-2 py-1 text-xs border border-zinc-200 rounded text-black outline-none focus:border-zinc-400 bg-white"
               />
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap items-center">
                 {LABEL_COLORS.map((c) => (
                   <button
                     key={c.value}
@@ -402,6 +452,23 @@ export default function MailPage() {
                     className={`w-4 h-4 rounded-full ${c.dot} transition-transform ${newLabelColor === c.value ? "ring-2 ring-offset-1 ring-zinc-500 scale-110" : ""}`}
                   />
                 ))}
+                {/* 커스텀 팔레트 */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => colorInputRef.current?.click()}
+                    style={newLabelColor.startsWith("#") ? { backgroundColor: newLabelColor } : { background: "conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" }}
+                    className={`w-4 h-4 rounded-full transition-transform ${newLabelColor.startsWith("#") ? "ring-2 ring-offset-1 ring-zinc-500 scale-110" : ""}`}
+                    title="커스텀 색상"
+                  />
+                  <input
+                    ref={colorInputRef}
+                    type="color"
+                    value={newLabelColor.startsWith("#") ? newLabelColor : "#6366f1"}
+                    onChange={(e) => setNewLabelColor(e.target.value)}
+                    className="sr-only"
+                  />
+                </div>
               </div>
               <button
                 onClick={handleCreateLabel}
@@ -414,24 +481,32 @@ export default function MailPage() {
           )}
 
           {labels.map((label) => {
-            const colorConf = LABEL_COLORS.find((c) => c.value === label.color) ?? LABEL_COLORS[4];
+            const { dotClass, dotStyle } = resolveLabelColor(label.color);
             const isActive = activeLabel === label.id;
+            const menuOpen = labelMenuId === label.id;
             return (
-              <button
-                key={label.id}
-                onClick={() => handleActivateLabel(label.id)}
-                className={`group w-full text-left text-sm px-3 py-1.5 rounded-lg flex items-center gap-2 active:bg-zinc-100 ${isActive ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
-              >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${colorConf.dot}`} />
-                <span className="flex-1 truncate text-xs">{label.name}</span>
-                <span
-                  role="button"
-                  onClick={(e) => { e.stopPropagation(); handleDeleteLabel(label.id); }}
-                  className="hidden group-hover:inline text-zinc-300 hover:text-red-400 text-xs leading-none"
+              <div key={label.id} className="relative group">
+                <button
+                  onClick={() => handleActivateLabel(label.id)}
+                  className={`w-full text-left text-sm px-3 py-1.5 rounded-lg flex items-center gap-2 active:bg-zinc-100 ${isActive ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
                 >
-                  ✕
-                </span>
-              </button>
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} style={dotStyle} />
+                  <span className="flex-1 truncate text-xs">{label.name}</span>
+                  <span
+                    role="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (menuOpen) { setLabelMenuId(null); setLabelMenuPos(null); return; }
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setLabelMenuPos({ top: rect.bottom + 4, left: rect.left });
+                      setLabelMenuId(label.id);
+                    }}
+                    className={`hidden group-hover:flex items-center justify-center w-4 h-4 text-zinc-400 hover:text-zinc-700 text-xs leading-none rounded hover:bg-zinc-200 ${menuOpen ? "!flex text-zinc-700" : ""}`}
+                  >
+                    ···
+                  </span>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -478,9 +553,10 @@ export default function MailPage() {
               ☰
             </button>
             <h2 className="text-sm font-semibold text-zinc-900 flex items-center gap-2 truncate">
-              {activeLabelObj && (
-                <span className={`w-2 h-2 rounded-full shrink-0 ${LABEL_COLORS.find((c) => c.value === activeLabelObj.color)?.dot ?? "bg-zinc-400"}`} />
-              )}
+              {activeLabelObj && (() => {
+                const { dotClass, dotStyle } = resolveLabelColor(activeLabelObj.color);
+                return <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} style={dotStyle} />;
+              })()}
               {listTitle}
             </h2>
           </div>
@@ -506,9 +582,16 @@ export default function MailPage() {
               <button onClick={handleBulkDeleteDraft} className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50">삭제</button>
             ) : (
               <>
-                {folder === "inbox" && (
-                  <button onClick={handleBulkMarkUnread} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">안읽음</button>
-                )}
+                {folder === "inbox" && (() => {
+                  const hasUnread = displayedMails.some((m) => checkedIds.has(m.id) && !m.read);
+                  const hasRead = displayedMails.some((m) => checkedIds.has(m.id) && m.read);
+                  return (
+                    <>
+                      {hasUnread && <button onClick={handleBulkMarkRead} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">읽음</button>}
+                      {hasRead && <button onClick={handleBulkMarkUnread} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">안읽음</button>}
+                    </>
+                  );
+                })()}
                 <button onClick={handleBulkTrash} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">삭제</button>
                 <button onClick={handleBulkCompose} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">단체발송</button>
               </>
@@ -525,22 +608,37 @@ export default function MailPage() {
               className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
             />
             {folder !== "draft" && (
-              <>
+              <div className="relative shrink-0" ref={filterDropdownRef}>
                 <button
-                  onClick={() => setUnreadOnly((v) => !v)}
-                  className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border transition-colors ${unreadOnly ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:border-zinc-300"}`}
-                  title="안읽은 메일만 보기"
+                  onClick={() => setShowFilterDropdown((v) => !v)}
+                  className={`flex items-center justify-center w-7 h-7 rounded-lg border transition-colors ${unreadOnly || noLabelOnly ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:border-zinc-300"}`}
+                  title="필터"
                 >
-                  안읽음
+                  <Funnel size={13} />
                 </button>
-                <button
-                  onClick={() => setNoLabelOnly((v) => !v)}
-                  className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border transition-colors ${noLabelOnly ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:border-zinc-300"}`}
-                  title="라벨 없는 메일만 보기"
-                >
-                  라벨없음
-                </button>
-              </>
+                {showFilterDropdown && (
+                  <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-zinc-200 rounded-xl shadow-lg z-20 py-1">
+                    <label className="flex items-center gap-2.5 px-3 py-2 hover:bg-zinc-50 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={unreadOnly}
+                        onChange={() => setUnreadOnly((v) => !v)}
+                        className="accent-zinc-800"
+                      />
+                      <span className="text-xs text-zinc-700">안읽음</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 px-3 py-2 hover:bg-zinc-50 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={noLabelOnly}
+                        onChange={() => setNoLabelOnly((v) => !v)}
+                        className="accent-zinc-800"
+                      />
+                      <span className="text-xs text-zinc-700">라벨 없음</span>
+                    </label>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -552,9 +650,12 @@ export default function MailPage() {
             ) : (
               filteredDrafts.map((draft) => (
                 <div key={draft.id} className={`flex items-stretch border-b border-zinc-100 hover:bg-zinc-50 group ${checkedIds.has(draft.id) ? "bg-zinc-50" : ""}`}>
-                  <label className={`flex items-center pl-3 pr-1 cursor-pointer ${checkedIds.size > 0 ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={checkedIds.has(draft.id)} onChange={() => toggleCheck(draft.id)} className="accent-zinc-800" />
-                  </label>
+                  <div className="flex items-center pl-3 pr-1 cursor-pointer w-8 shrink-0" onClick={(e) => { e.stopPropagation(); toggleCheck(draft.id); }}>
+                    {checkedIds.has(draft.id)
+                      ? <CheckSquare size={15} className="text-zinc-700" />
+                      : <span className={checkedIds.size > 0 ? "block" : "hidden group-hover:block"}><Square size={15} className="text-zinc-300" /></span>
+                    }
+                  </div>
                   <button onClick={() => openDraft(draft)} className="flex-1 text-left px-3 py-3 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-zinc-500 truncate">{draft.to || "(받는 사람 없음)"}</span>
@@ -581,9 +682,23 @@ export default function MailPage() {
                 .filter(Boolean) as Label[];
               return (
                 <div key={mail.id} className={`flex items-stretch border-b border-zinc-100 hover:bg-zinc-50 group ${selected?.id === mail.id || checkedIds.has(mail.id) ? "bg-zinc-50" : ""}`}>
-                  <label className={`flex items-center pl-3 pr-1 cursor-pointer ${checkedIds.size > 0 ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={checkedIds.has(mail.id)} onChange={() => toggleCheck(mail.id)} className="accent-zinc-800" />
-                  </label>
+                  <div className="flex items-center pl-3 pr-1 cursor-pointer w-8 shrink-0" onClick={(e) => { e.stopPropagation(); toggleCheck(mail.id); }}>
+                    {checkedIds.has(mail.id) ? (
+                      <CheckSquare size={15} className="text-zinc-700" />
+                    ) : (
+                      <>
+                        <span className={checkedIds.size > 0 ? "hidden" : "group-hover:hidden"}>
+                          {!mail.read
+                            ? <MailIcon size={15} className="text-teal-400" />
+                            : <MailOpen size={15} className="text-zinc-300" />
+                          }
+                        </span>
+                        <span className={checkedIds.size > 0 ? "block" : "hidden group-hover:block"}>
+                          <Square size={15} className="text-zinc-300" />
+                        </span>
+                      </>
+                    )}
+                  </div>
                   <button onClick={() => handleSelect(mail)} className="flex-1 text-left px-3 py-3 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className={`text-xs truncate ${!mail.read ? "font-semibold text-zinc-900" : "text-zinc-500"}`}>
@@ -613,8 +728,8 @@ export default function MailPage() {
                       {mailLabelDots.length > 0 && (
                         <div className="flex gap-0.5 shrink-0">
                           {mailLabelDots.map((lbl) => {
-                            const colorConf = LABEL_COLORS.find((c) => c.value === lbl.color) ?? LABEL_COLORS[4];
-                            return <span key={lbl.id} className={`w-1.5 h-1.5 rounded-full ${colorConf.dot}`} title={lbl.name} />;
+                            const { dotClass, dotStyle } = resolveLabelColor(lbl.color);
+                            return <span key={lbl.id} className={`w-1.5 h-1.5 rounded-full ${dotClass}`} style={dotStyle} title={lbl.name} />;
                           })}
                         </div>
                       )}
@@ -676,7 +791,7 @@ export default function MailPage() {
                             <p className="text-xs text-zinc-400 px-3 py-2">라벨 없음 — 사이드바에서 만드세요</p>
                           ) : (
                             labels.map((label) => {
-                              const colorConf = LABEL_COLORS.find((c) => c.value === label.color) ?? LABEL_COLORS[4];
+                              const { dotClass, dotStyle } = resolveLabelColor(label.color);
                               const hasLabel = selected.labels?.includes(label.id) ?? false;
                               return (
                                 <button
@@ -684,7 +799,7 @@ export default function MailPage() {
                                   onClick={() => handleToggleLabel(selected.id, label.id, hasLabel)}
                                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 active:bg-zinc-100"
                                 >
-                                  <span className={`w-2 h-2 rounded-full shrink-0 ${colorConf.dot}`} />
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} style={dotStyle} />
                                   <span className="flex-1 text-left">{label.name}</span>
                                   {hasLabel && <span className="text-zinc-900 font-bold">✓</span>}
                                 </button>
@@ -712,11 +827,12 @@ export default function MailPage() {
                 {selected.labels!.map((lid) => {
                   const lbl = labels.find((l) => l.id === lid);
                   if (!lbl) return null;
-                  const colorConf = LABEL_COLORS.find((c) => c.value === lbl.color) ?? LABEL_COLORS[4];
+                  const { pillClass, pillStyle } = resolveLabelColor(lbl.color);
                   return (
                     <span
                       key={lid}
-                      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${colorConf.pill}`}
+                      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${pillClass}`}
+                      style={pillStyle}
                     >
                       {lbl.name}
                       <button
@@ -878,6 +994,105 @@ export default function MailPage() {
       </main>
 
       {composing && <ComposeModal onClose={handleComposeClose} draft={editingDraft} init={composeInit} />}
+
+      {/* 라벨 ··· 컨텍스트 메뉴 (fixed — 사이드바 overflow 탈출) */}
+      {labelMenuId && labelMenuPos && (() => {
+        const label = labels.find((l) => l.id === labelMenuId);
+        if (!label) return null;
+        return (
+          <div
+            ref={labelMenuRef}
+            style={{ position: "fixed", top: labelMenuPos.top, left: labelMenuPos.left }}
+            className="w-32 bg-white border border-zinc-200 rounded-xl shadow-lg z-[60] py-1"
+          >
+            <button
+              onClick={() => { setEditLabelModal({ id: label.id, name: label.name, color: label.color }); setLabelMenuId(null); setLabelMenuPos(null); }}
+              className="w-full text-left text-xs px-3 py-2 text-zinc-700 hover:bg-zinc-50"
+            >
+              이름 변경
+            </button>
+            <button
+              onClick={() => { setEditLabelModal({ id: label.id, name: label.name, color: label.color }); setLabelMenuId(null); setLabelMenuPos(null); }}
+              className="w-full text-left text-xs px-3 py-2 text-zinc-700 hover:bg-zinc-50"
+            >
+              색상 변경
+            </button>
+            <div className="border-t border-zinc-100 my-0.5" />
+            <button
+              onClick={() => { setDeleteLabelConfirm(label); setLabelMenuId(null); setLabelMenuPos(null); }}
+              className="w-full text-left text-xs px-3 py-2 text-red-500 hover:bg-red-50"
+            >
+              삭제
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* 라벨 편집 모달 */}
+      {editLabelModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setEditLabelModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-zinc-900 mb-4">라벨 편집</h3>
+            <div className="flex flex-col gap-3">
+              <input
+                type="text"
+                autoFocus
+                value={editLabelModal.name}
+                onChange={(e) => setEditLabelModal({ ...editLabelModal, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") handleUpdateLabel(); if (e.key === "Escape") setEditLabelModal(null); }}
+                className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg text-black outline-none focus:border-zinc-400"
+              />
+              <div className="flex gap-1.5 flex-wrap items-center">
+                {LABEL_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setEditLabelModal({ ...editLabelModal, color: c.value })}
+                    className={`w-4 h-4 rounded-full ${c.dot} transition-transform ${editLabelModal.color === c.value ? "ring-2 ring-offset-1 ring-zinc-500 scale-110" : ""}`}
+                  />
+                ))}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => editColorInputRef.current?.click()}
+                    style={editLabelModal.color.startsWith("#") ? { backgroundColor: editLabelModal.color } : { background: "conic-gradient(red,yellow,lime,cyan,blue,magenta,red)" }}
+                    className={`w-4 h-4 rounded-full transition-transform ${editLabelModal.color.startsWith("#") ? "ring-2 ring-offset-1 ring-zinc-500 scale-110" : ""}`}
+                    title="커스텀 색상"
+                  />
+                  <input
+                    ref={editColorInputRef}
+                    type="color"
+                    value={editLabelModal.color.startsWith("#") ? editLabelModal.color : "#6366f1"}
+                    onChange={(e) => setEditLabelModal({ ...editLabelModal, color: e.target.value })}
+                    className="sr-only"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <button onClick={() => setEditLabelModal(null)} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">취소</button>
+              <button onClick={handleUpdateLabel} disabled={!editLabelModal.name.trim()} className="text-xs px-3 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-700 disabled:opacity-40">저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 라벨 삭제 확인 모달 */}
+      {deleteLabelConfirm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setDeleteLabelConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-zinc-900 mb-2">라벨 삭제</h3>
+            <p className="text-sm text-zinc-600 mb-1">
+              <span className="font-medium text-zinc-900">"{deleteLabelConfirm.name}"</span> 라벨을 삭제할까요?
+            </p>
+            <p className="text-xs text-red-500 mb-5">삭제 후 되돌릴 수 없습니다. 이 라벨이 적용된 모든 메일에서도 제거됩니다.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteLabelConfirm(null)} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">취소</button>
+              <button onClick={() => handleDeleteLabel(deleteLabelConfirm.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {quickAdd && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
