@@ -7,7 +7,7 @@ import RichEditor from "@/components/RichEditor";
 import EmailChipInput from "@/components/EmailChipInput";
 import { saveSentMail, saveDraft, deleteDraft, type Draft } from "@/lib/mail";
 import { getSignature } from "@/lib/settings";
-import { getPersonalContacts, getGlobalContacts, type Contact } from "@/lib/contacts";
+import { getPersonalContacts, getGlobalContacts, getMdlMembers, type Contact } from "@/lib/contacts";
 
 interface ComposeInit {
   to?: string[];
@@ -44,11 +44,19 @@ export default function ComposeModal({ onClose, draft, init }: Props) {
   const isDirtyRef = useRef(false);
 
   useEffect(() => {
-    Promise.all([getPersonalContacts(), getGlobalContacts()]).then(([personal, global]) => {
-      const merged = [...personal, ...global].filter(
-        (c, i, arr) => arr.findIndex((x) => x.email === c.email) === i
-      );
-      setContacts(merged);
+    Promise.all([getPersonalContacts(), getGlobalContacts(), getMdlMembers()]).then(([personal, global, members]) => {
+      // personal > global > members 우선순위로 머지, 빈 필드는 하위 항목으로 보완
+      const emailMap = new Map<string, typeof personal[0]>();
+      for (const c of [...members, ...global, ...personal]) {
+        const existing = emailMap.get(c.email);
+        emailMap.set(c.email, existing ? {
+          ...existing,
+          ...c,
+          name: c.name || existing.name,
+          company: c.company || existing.company,
+        } : c);
+      }
+      setContacts([...emailMap.values()]);
     });
   }, []);
 
@@ -162,6 +170,13 @@ export default function ComposeModal({ onClose, draft, init }: Props) {
           <div className="flex items-center border-b border-zinc-100">
             <EmailChipInput values={to} onChange={setTo} placeholder="받는 사람" contacts={contacts} />
             <div className="flex gap-2 pr-3 shrink-0 text-xs text-zinc-400">
+              <button
+                type="button"
+                onClick={() => { const me = auth.currentUser?.email; if (me && !to.includes(me)) setTo([...to, me]); }}
+                className="hover:text-zinc-600"
+              >
+                나에게
+              </button>
               {!showCc && <button onClick={() => setShowCc(true)} className="hover:text-zinc-600">참조</button>}
               {!showBcc && <button onClick={() => setShowBcc(true)} className="hover:text-zinc-600">숨은참조</button>}
             </div>

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 interface ContactSuggestion {
   name: string;
   email: string;
+  company?: string;
 }
 
 interface Props {
@@ -20,15 +21,19 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const touchingDropdownRef = useRef(false);
 
   const q = input.trim().toLowerCase();
   const suggestions = q.length >= 1
     ? contacts.filter(
         (c) =>
-          (c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)) &&
+          (c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) ||
+            (c.company?.toLowerCase().includes(q) ?? false)) &&
           !values.includes(c.email)
       ).slice(0, 6)
-    : [];
+    : contacts.filter(
+        (c) => c.email.endsWith("@mdl.kr") && !values.includes(c.email)
+      ).slice(0, 6);
 
   function addChip(email: string) {
     const trimmed = email.trim();
@@ -68,6 +73,7 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
 
   function handleBlur() {
     setTimeout(() => {
+      if (touchingDropdownRef.current) return;
       if (input.includes("@")) addChip(input);
       setOpen(false);
     }, 150);
@@ -152,10 +158,13 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={() => { touchingDropdownRef.current = true; }}
+                onTouchEnd={(e) => { e.preventDefault(); touchingDropdownRef.current = false; addChip(c.email); }}
                 onClick={() => addChip(c.email)}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 flex items-center gap-2"
               >
                 <span className="font-medium text-zinc-900">{c.name}</span>
+                {c.company && <span className="text-zinc-500 text-xs">{c.company}</span>}
                 <span className="text-zinc-400 text-xs">{c.email}</span>
               </button>
             </li>

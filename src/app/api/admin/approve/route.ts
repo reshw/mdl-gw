@@ -64,6 +64,12 @@ export async function POST(req: NextRequest) {
 
   await addEmailRoutingRule(email);
 
+  await adminDb.collection("members").doc(email).set({
+    email,
+    name,
+    createdAt: new Date().toISOString(),
+  });
+
   await docRef.update({
     status: "approved",
     password: FieldValue.delete(),

@@ -21,6 +21,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [requests, setRequests] = useState<SignupRequest[]>([]);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.email !== ADMIN_EMAIL)) router.push("/");
@@ -69,9 +70,32 @@ export default function AdminPage() {
       <div className="max-w-2xl mx-auto py-12 px-4">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-xl font-semibold text-zinc-900">가입 승인</h1>
-          <button onClick={() => router.push("/mail")} className="text-sm text-zinc-500 hover:text-zinc-900">
-            메일함으로
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                setMigrating(true);
+                try {
+                  const token = await getIdToken(auth.currentUser!);
+                  const res = await fetch("/api/admin/migrate-members", {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  const data = await res.json();
+                  if (res.ok) alert(`멤버 마이그레이션 완료: ${data.count}명`);
+                  else alert(data.error);
+                } finally {
+                  setMigrating(false);
+                }
+              }}
+              disabled={migrating}
+              className="text-xs text-zinc-500 hover:text-zinc-900 border border-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {migrating ? "마이그레이션 중..." : "멤버 마이그레이션"}
+            </button>
+            <button onClick={() => router.push("/mail")} className="text-sm text-zinc-500 hover:text-zinc-900">
+              메일함으로
+            </button>
+          </div>
         </div>
         {requests.length === 0 ? (
           <p className="text-sm text-zinc-400">대기 중인 가입 신청이 없습니다.</p>

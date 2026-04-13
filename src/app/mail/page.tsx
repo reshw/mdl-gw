@@ -32,9 +32,11 @@ export default function MailPage() {
   const [composeInit, setComposeInit] = useState<{ to?: string[]; cc?: string[]; subject?: string; html?: string } | undefined>(undefined);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [folder, setFolder] = useState<Folder>("inbox");
-  const [quickAdd, setQuickAdd] = useState<{ email: string; name: string } | null>(null);
+  const [quickAdd, setQuickAdd] = useState<{ email: string; name: string; company: string } | null>(null);
   const [quickSaving, setQuickSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [noLabelOnly, setNoLabelOnly] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<Record<string, TrackingStatus> | null>(null);
 
@@ -131,10 +133,10 @@ export default function MailPage() {
     setCheckedIds(new Set());
   }
 
-  function parseEmailAddress(raw: string): { name: string; email: string } {
+  function parseEmailAddress(raw: string): { name: string; email: string; company: string } {
     const match = raw.match(/^"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-    if (match) return { name: match[1].trim(), email: match[2].trim() };
-    return { name: "", email: raw.trim() };
+    if (match) return { name: match[1].trim(), email: match[2].trim(), company: "" };
+    return { name: "", email: raw.trim(), company: "" };
   }
 
   function openDraft(draft: Draft) {
@@ -174,7 +176,7 @@ export default function MailPage() {
   function quoteHtml(mail: Mail): string {
     const date = new Date(mail.createdAt).toLocaleString("ko-KR");
     const body = mail.html || `<pre>${mail.text ?? ""}</pre>`;
-    return `<br><br><div style="border-left:3px solid #d1d5db;padding-left:12px;color:#6b7280;font-size:13px;"><p style="margin:0 0 4px 0"><b>보낸 사람:</b> ${mail.from}</p><p style="margin:0 0 4px 0"><b>날짜:</b> ${date}</p><p style="margin:0 0 8px 0"><b>제목:</b> ${mail.subject}</p>${body}</div>`;
+    return `<br><br><p style="margin:0 0 8px 0;color:#9ca3af;font-size:12px;">──────── Original Message ────────</p><div style="color:#6b7280;font-size:13px;"><p style="margin:0 0 4px 0"><b>보낸 사람:</b> ${mail.from}</p><p style="margin:0 0 4px 0"><b>날짜:</b> ${date}</p><p style="margin:0 0 8px 0"><b>제목:</b> ${mail.subject}</p>${body}</div>`;
   }
 
   async function handleTrash(mail: Mail, e: React.MouseEvent) {
@@ -281,7 +283,7 @@ export default function MailPage() {
       setActiveLabel(null);
     } else {
       setActiveLabel(labelId);
-      setFolder("inbox");
+      if (folder === "draft" || folder === "trash") setFolder("inbox");
       setSelected(null);
       setCheckedIds(new Set());
     }
@@ -308,10 +310,14 @@ export default function MailPage() {
       )
     : currentMails;
 
-  // 라벨 필터 적용
-  const displayedMails = activeLabel
+  // 라벨 + 안읽은 필터 적용
+  const labelFiltered = activeLabel
     ? filteredMails.filter((m) => m.labels?.includes(activeLabel))
     : filteredMails;
+  const unreadFiltered = unreadOnly ? labelFiltered.filter((m) => !m.read) : labelFiltered;
+  const displayedMails = noLabelOnly
+    ? unreadFiltered.filter((m) => !m.labels?.length)
+    : unreadFiltered;
 
   const filteredDrafts = q
     ? drafts.filter((d) =>
@@ -436,7 +442,7 @@ export default function MailPage() {
             onClick={() => router.push("/admin")}
             className="text-left text-sm px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-50"
           >
-            가입 승인
+            관리자
           </button>
         )}
         <button
@@ -510,14 +516,32 @@ export default function MailPage() {
             <button onClick={() => setCheckedIds(new Set())} className="text-xs text-zinc-400 hover:text-zinc-600">취소</button>
           </div>
         ) : (
-          <div className="px-3 py-2 border-b border-zinc-100">
+          <div className="px-3 py-2 border-b border-zinc-100 flex gap-2 items-center">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="검색 (보낸사람, 제목, 내용)"
-              className="w-full text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+              className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
             />
+            {folder !== "draft" && (
+              <>
+                <button
+                  onClick={() => setUnreadOnly((v) => !v)}
+                  className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border transition-colors ${unreadOnly ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:border-zinc-300"}`}
+                  title="안읽은 메일만 보기"
+                >
+                  안읽음
+                </button>
+                <button
+                  onClick={() => setNoLabelOnly((v) => !v)}
+                  className={`shrink-0 text-xs px-2 py-1.5 rounded-lg border transition-colors ${noLabelOnly ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:border-zinc-300"}`}
+                  title="라벨 없는 메일만 보기"
+                >
+                  라벨없음
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -877,6 +901,14 @@ export default function MailPage() {
                 onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("quick-add-save")?.click(); }}
                 className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg text-black outline-none focus:border-zinc-400"
               />
+              <input
+                type="text"
+                placeholder="회사 (선택)"
+                value={quickAdd.company}
+                onChange={(e) => setQuickAdd({ ...quickAdd, company: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("quick-add-save")?.click(); }}
+                className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg text-black outline-none focus:border-zinc-400"
+              />
             </div>
             <div className="flex gap-2 mt-5 justify-end">
               <button
@@ -891,7 +923,7 @@ export default function MailPage() {
                 onClick={async () => {
                   setQuickSaving(true);
                   try {
-                    await addPersonalContact(quickAdd.name.trim(), quickAdd.email);
+                    await addPersonalContact(quickAdd.name.trim(), quickAdd.email, quickAdd.company.trim() || undefined);
                     setQuickAdd(null);
                   } finally {
                     setQuickSaving(false);

@@ -61,6 +61,29 @@ export default function RichEditor({ value, onChange }: Props) {
     height: 340,
     language: "ko",
     toolbarButtonSize: "small" as const,
+    spellcheck: false,
+    events: {
+      afterInit: (editor: any) => {
+        const el = editor.editor as HTMLElement;
+        el.setAttribute("autocorrect", "off");
+        el.setAttribute("autocomplete", "off");
+        el.setAttribute("autocapitalize", "off");
+        el.setAttribute("spellcheck", "false");
+
+        // 모바일 한글 IME: 조합 중 백스페이스 시 유령 글자 방지
+        let isComposing = false;
+        el.addEventListener("compositionstart", () => { isComposing = true; });
+        el.addEventListener("compositionend", () => {
+          isComposing = false;
+        });
+        el.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key === "Backspace" && isComposing) {
+            // 조합 중 백스페이스는 브라우저/IME에게 맡기고 Jodit 처리 방지
+            e.stopPropagation();
+          }
+        }, true);
+      },
+    },
     buttons: [
       "bold", "italic", "underline", "strikethrough", "|",
       "font", "brush", "|",
