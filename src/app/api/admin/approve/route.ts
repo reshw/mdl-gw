@@ -47,34 +47,40 @@ export async function POST(req: NextRequest) {
 
   const { requestId } = await req.json();
 
-  const docRef = adminDb.collection("signup_requests").doc(requestId);
-  const doc = await docRef.get();
-  if (!doc.exists) return NextResponse.json({ error: "요청 없음" }, { status: 404 });
+  try {
+    const docRef = adminDb.collection("signup_requests").doc(requestId);
+    const doc = await docRef.get();
+    if (!doc.exists) return NextResponse.json({ error: "요청 없음" }, { status: 404 });
 
-  const { id, name, password } = doc.data()!;
+    const { id, name, password } = doc.data()!;
 
-  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
-  const email = `${id}@${MAIL_DOMAIN}`;
+    const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+    const email = `${id}@${MAIL_DOMAIN}`;
 
-  await adminAuth.createUser({
-    email,
-    password,
-    displayName: name,
-  });
+    await adminAuth.createUser({
+      email,
+      password,
+      displayName: name,
+    });
 
-  await addEmailRoutingRule(email);
+    await addEmailRoutingRule(email);
 
-  await adminDb.collection("members").doc(email).set({
-    email,
-    name,
-    createdAt: new Date().toISOString(),
-  });
+    await adminDb.collection("members").doc(email).set({
+      email,
+      name,
+      createdAt: new Date().toISOString(),
+    });
 
-  await docRef.update({
-    status: "approved",
-    password: FieldValue.delete(),
-    approvedAt: new Date().toISOString(),
-  });
+    await docRef.update({
+      status: "approved",
+      password: FieldValue.delete(),
+      approvedAt: new Date().toISOString(),
+    });
 
-  return NextResponse.json({ ok: true, email });
+    return NextResponse.json({ ok: true, email });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("approve error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
