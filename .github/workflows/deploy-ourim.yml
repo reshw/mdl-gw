@@ -19,7 +19,8 @@ jobs:
         run: |
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
-          git remote add ourim "https://x-access-token:${OURIM_PAT}@github.com/nayureshy-lgtm/ourim-gw.git"
+          git remote add ourim https://github.com/nayureshy-lgtm/ourim-gw.git
+          git config http.https://github.com/.extraheader "Authorization: Basic $(echo -n "x-access-token:${OURIM_PAT}" | base64 -w 0)"
           git push ourim HEAD:master --force
 
       - name: Trigger Vercel Deploy
