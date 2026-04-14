@@ -14,9 +14,13 @@ jobs:
           fetch-depth: 0
 
       - name: Push to ourim-gw repo
+        env:
+          OURIM_PAT: ${{ secrets.OURIM_GITHUB_PAT }}
         run: |
-          git remote add ourim https://x-access-token:${{ secrets.OURIM_GITHUB_PAT }}@github.com/nayureshy-lgtm/ourim-gw.git
-          git push ourim master:master --force
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git remote add ourim "https://x-access-token:${OURIM_PAT}@github.com/nayureshy-lgtm/ourim-gw.git"
+          git push ourim HEAD:master --force
 
       - name: Trigger Vercel Deploy
         run: |
