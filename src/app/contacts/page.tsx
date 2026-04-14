@@ -130,7 +130,7 @@ export default function ContactsPage() {
         <div className="bg-white border-b border-zinc-200 px-6 py-3 flex items-center gap-4 shrink-0">
           <div className="flex gap-1">
             {(["personal", "global", "members"] as const).map((t) => {
-              const labels = { personal: "개인 주소록", global: "전체 주소록", members: "mdl 멤버" };
+              const labels = { personal: "개인 주소록", global: "전체 주소록", members: "그룹 멤버" };
               const counts = { personal: personal.length, global: global.length, members: members.length };
               return (
                 <button
