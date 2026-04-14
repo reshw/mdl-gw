@@ -16,4 +16,8 @@ jobs:
       - name: Push to ourim-gw repo
         run: |
           git remote add ourim https://x-access-token:${{ secrets.OURIM_GITHUB_PAT }}@github.com/nayureshy-lgtm/ourim-gw.git
-          git push ourim master:main --force
+          git push ourim master:master --force
+
+      - name: Trigger Vercel Deploy
+        run: |
+          curl -X POST "https://api.vercel.com/v1/integrations/deploy/prj_GKw4dF7QhdaxyZ5gOdnvziGQqSvX/TeYMOkC6s2"
