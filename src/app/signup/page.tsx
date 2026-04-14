@@ -25,7 +25,7 @@ export default function SignupPage() {
       setIdMessage(data.error);
     } else if (data.available) {
       setIdStatus("ok");
-      setIdMessage(`${value}@mdl.kr 사용 가능`);
+      setIdMessage(`${value}@${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 사용 가능`);
     } else {
       setIdStatus("taken");
       setIdMessage("이미 사용 중인 아이디입니다.");
@@ -71,7 +71,7 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8">
-        <h1 className="text-xl font-semibold text-zinc-900 mb-6">mdl.kr 가입 신청</h1>
+        <h1 className="text-xl font-semibold text-zinc-900 mb-6">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 가입 신청</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
             <div className="flex gap-2">
@@ -97,7 +97,7 @@ export default function SignupPage() {
                 {idMessage}
               </p>
             )}
-            <p className="text-xs text-zinc-400 mt-1">가입 후 이메일: {id || "아이디"}@mdl.kr</p>
+            <p className="text-xs text-zinc-400 mt-1">가입 후 이메일: {id || "아이디"}@{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}</p>
           </div>
           <input
             type="text"

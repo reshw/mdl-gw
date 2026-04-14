@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebase-admin";
 
 const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
-const R2_BUCKET = "mailer-attachments";
+const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
 // 이미지 업로드 (인증 필요)

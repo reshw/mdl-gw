@@ -105,7 +105,7 @@ export default function AdminPage() {
               <div key={req.docId} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-zinc-900">{req.name}</p>
-                  <p className="text-xs text-zinc-500">{req.id}@mdl.kr</p>
+                  <p className="text-xs text-zinc-500">{req.id}@{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}</p>
                   <p className="text-xs text-zinc-400">{new Date(req.createdAt).toLocaleString("ko-KR")}</p>
                 </div>
                 <div className="flex gap-2">

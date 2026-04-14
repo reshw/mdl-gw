@@ -5,7 +5,7 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
-const R2_BUCKET = "mailer-attachments";
+const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
 async function sha256Hex(data: Uint8Array | string): Promise<string> {
@@ -120,7 +120,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
 
-  if (!fromEmail.endsWith("@mdl.kr") && fromEmail !== process.env.ADMIN_EMAIL) {
+  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+  if (!fromEmail.endsWith(`@${MAIL_DOMAIN}`) && fromEmail !== process.env.ADMIN_EMAIL) {
     return NextResponse.json({ error: "권한 없음" }, { status: 403 });
   }
 
@@ -133,9 +134,9 @@ export async function POST(req: NextRequest) {
   const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
   const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
 
-  const from = fromEmail.endsWith("@mdl.kr")
+  const from = fromEmail.endsWith(`@${MAIL_DOMAIN}`)
     ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
-    : "noreply@mdl.kr";
+    : `noreply@${MAIL_DOMAIN}`;
 
   // 트래킹 픽셀 베이스 URL
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
       openedAt: null,
     });
 
-    if (recipient.endsWith("@mdl.kr")) {
+    if (recipient.endsWith(`@${MAIL_DOMAIN}`)) {
       // 내부 메일: Resend 우회, Firestore에 직접 저장
       const mailId = crypto.randomUUID();
       const attachmentMeta = attachments?.length
@@ -180,10 +181,10 @@ export async function POST(req: NextRequest) {
       });
     } else {
       // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
-      const externalCcList = ccList.filter((c) => !c.endsWith("@mdl.kr"));
+      const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
       const externalCcStr = externalCcList.length > 0 ? externalCcList.join(", ") : undefined;
       const bccList: string[] = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
-      const externalBccList = bccList.filter((c) => !c.endsWith("@mdl.kr"));
+      const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
       const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
 
       await resend.emails.send({
@@ -201,9 +202,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // CC 중 @mdl.kr 수신자도 내부 직접 저장
+  // CC 중 내부 도메인 수신자도 내부 직접 저장
   for (const ccRecipient of ccList) {
-    if (!ccRecipient.endsWith("@mdl.kr")) continue;
+    if (!ccRecipient.endsWith(`@${MAIL_DOMAIN}`)) continue;
     const trackId = crypto.randomUUID();
     trackIds[ccRecipient] = trackId;
     const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;

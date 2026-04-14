@@ -36,12 +36,13 @@ export async function POST(req: NextRequest) {
   });
 
   // 관리자 알림 메일 발송
+  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
   const adminEmail = process.env.ADMIN_EMAIL!;
   await resend.emails.send({
-    from: "noreply@mdl.kr",
+    from: `noreply@${MAIL_DOMAIN}`,
     to: adminEmail,
-    subject: `[mdl.kr] 가입 신청 — ${name} (${id}@mdl.kr)`,
-    html: `<p><b>${name}</b>님이 <b>${id}@mdl.kr</b> 계정 가입을 신청했습니다.</p><p>관리자 페이지에서 승인 또는 거절해 주세요.</p>`,
+    subject: `[${MAIL_DOMAIN}] 가입 신청 — ${name} (${id}@${MAIL_DOMAIN})`,
+    html: `<p><b>${name}</b>님이 <b>${id}@${MAIL_DOMAIN}</b> 계정 가입을 신청했습니다.</p><p>관리자 페이지에서 승인 또는 거절해 주세요.</p>`,
   });
 
   return NextResponse.json({ ok: true });

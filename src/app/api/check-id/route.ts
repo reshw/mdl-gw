@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebase-admin";
 
-const PROJECT_ID = "emailer-71608";
+const PROJECT_ID = process.env.FIREBASE_ADMIN_PROJECT_ID ?? "";
 
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
 
   // Firebase Auth 중복 확인
   try {
-    await adminAuth.getUserByEmail(`${id}@mdl.kr`);
+    const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+    await adminAuth.getUserByEmail(`${id}@${MAIL_DOMAIN}`);
     return NextResponse.json({ available: false });
   } catch {
     return NextResponse.json({ available: true });

@@ -389,7 +389,7 @@ export default function MailPage() {
 
       {/* 사이드바 */}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1 overflow-y-auto transition-transform duration-200 lg:static lg:translate-x-0 lg:w-52 ${showMobileSidebar ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="text-sm font-semibold text-zinc-900 mb-4">mdl.kr 메일</div>
+        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</div>
 
         {/* 폴더 목록 */}
         {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (

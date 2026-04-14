@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
-const ADMIN_EMAIL = "reshw@naver.com";
-const CF_ZONE_ID = "de579473b012d58c2fdf7390fb83d130";
-const CF_WORKER_NAME = "mailer-worker";
+const CF_ZONE_ID = process.env.CF_ZONE_ID ?? "";
+const CF_WORKER_NAME = process.env.CF_WORKER_NAME ?? "";
 
 async function addEmailRoutingRule(email: string) {
   const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -39,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    if (decoded.email !== ADMIN_EMAIL) {
+    if (decoded.email !== process.env.ADMIN_EMAIL) {
       return NextResponse.json({ error: "권한 없음" }, { status: 403 });
     }
   } catch {
@@ -54,7 +53,8 @@ export async function POST(req: NextRequest) {
 
   const { id, name, password } = doc.data()!;
 
-  const email = `${id}@mdl.kr`;
+  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+  const email = `${id}@${MAIL_DOMAIN}`;
 
   await adminAuth.createUser({
     email,

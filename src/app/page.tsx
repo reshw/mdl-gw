@@ -30,8 +30,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8">
-        <h1 className="text-xl font-semibold text-zinc-900 mb-6">mdl.kr 메일</h1>
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 relative">
+        <h1 className="text-xl font-semibold text-zinc-900 mb-6">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="email"
@@ -61,6 +61,7 @@ export default function LoginPage() {
         <button onClick={() => router.push("/signup")} className="w-full mt-4 text-sm text-zinc-400 hover:text-zinc-600">
           가입 신청
         </button>
+        <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.260414</p>
       </div>
     </div>
   );

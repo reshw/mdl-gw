@@ -40,7 +40,7 @@ export default function SettingsPage() {
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
       {/* 사이드바 */}
       <aside className="w-52 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1">
-        <div className="text-sm font-semibold text-zinc-900 mb-4">mdl.kr 메일</div>
+        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</div>
         <button
           onClick={() => router.push("/mail")}
           className="text-left text-sm px-3 py-2 rounded-lg text-zinc-600 hover:bg-zinc-50"

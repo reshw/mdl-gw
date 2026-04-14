@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 
-const ADMIN_EMAIL = "reshw@naver.com";
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -9,7 +8,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    if (decoded.email !== ADMIN_EMAIL) {
+    if (decoded.email !== process.env.ADMIN_EMAIL) {
       return NextResponse.json({ error: "권한 없음" }, { status: 403 });
     }
   } catch {
@@ -26,7 +25,7 @@ export async function POST(req: NextRequest) {
   for (const doc of snap.docs) {
     const { id, name } = doc.data();
     if (!id || !name) continue;
-    const email = `${id}@mdl.kr`;
+    const email = `${id}@${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}`;
     const ref = adminDb.collection("members").doc(email);
     batch.set(ref, { email, name, createdAt: doc.data().approvedAt ?? doc.data().createdAt ?? new Date().toISOString() }, { merge: true });
     count++;
