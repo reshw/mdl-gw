@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
       displayName: name,
     });
 
-    await addEmailRoutingRule(email);
+    try {
+      await addEmailRoutingRule(email);
+    } catch (e) {
+      console.error("이메일 라우팅 규칙 추가 실패 (수동 설정 필요):", e instanceof Error ? e.message : e);
+    }
 
     await adminDb.collection("members").doc(email).set({
       email,
