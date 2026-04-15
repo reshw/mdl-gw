@@ -4,7 +4,6 @@ import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { sha256 } from "@/lib/hash";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +17,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const hashed = await sha256(password);
-      await signInWithEmailAndPassword(auth, email, hashed);
+      await signInWithEmailAndPassword(auth, email, password);
       router.push("/mail");
     } catch {
       setError("이메일 또는 비밀번호가 올바르지 않습니다.");
