@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { insertWpUser } from "@/lib/wp-db";
 
 const CF_ZONE_ID = process.env.CF_ZONE_ID ?? "";
 const CF_WORKER_NAME = process.env.CF_WORKER_NAME ?? "";
@@ -52,16 +53,13 @@ export async function POST(req: NextRequest) {
     const doc = await docRef.get();
     if (!doc.exists) return NextResponse.json({ error: "요청 없음" }, { status: 404 });
 
-    const { id, name, password } = doc.data()!;
+    const { id, name, email: personalEmail, uid } = doc.data()!;
 
     const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
     const email = `${id}@${MAIL_DOMAIN}`;
 
-    await adminAuth.createUser({
-      email,
-      password,
-      displayName: name,
-    });
+    // 신청 시 비활성으로 생성된 계정 활성화
+    await adminAuth.updateUser(uid, { disabled: false });
 
     try {
       await addEmailRoutingRule(email);
@@ -70,10 +68,24 @@ export async function POST(req: NextRequest) {
     }
 
     await adminDb.collection("members").doc(email).set({
+      id,
       email,
+      personalEmail: personalEmail ?? "",
       name,
       createdAt: new Date().toISOString(),
     });
+
+    // MariaDB wp_users 동기화 (non-fatal)
+    try {
+      await insertWpUser({
+        userLogin: id,
+        userPass: "*",  // WP 직접 로그인 불가 — 통합 Auth 때 해결
+        userEmail: personalEmail ?? "",
+        displayName: name,
+      });
+    } catch (e) {
+      console.error("MariaDB wp_users INSERT 실패 (수동 등록 필요):", e instanceof Error ? e.message : e);
+    }
 
     await docRef.update({
       status: "approved",
