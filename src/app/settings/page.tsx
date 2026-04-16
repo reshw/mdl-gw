@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getSignature, saveSignature } from "@/lib/settings";
+import { getIdToken } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import RichEditor from "@/components/RichEditor";
 
 export default function SettingsPage() {
@@ -12,6 +14,11 @@ export default function SettingsPage() {
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -33,6 +40,30 @@ export default function SettingsPage() {
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePasswordChange() {
+    if (!auth.currentUser) return;
+    setPwSaving(true);
+    setPwMsg(null);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPwMsg({ text: data.error, ok: false });
+      } else {
+        setPwMsg({ text: "비밀번호가 변경되었습니다.", ok: true });
+        setCurrentPw("");
+        setNewPw("");
+      }
+    } finally {
+      setPwSaving(false);
     }
   }
 
@@ -70,6 +101,37 @@ export default function SettingsPage() {
               {saving ? "저장 중..." : "저장"}
             </button>
             {saved && <span className="text-xs text-zinc-400">저장되었습니다.</span>}
+          </div>
+        </section>
+
+        <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-2xl mt-6">
+          <h2 className="text-sm font-semibold text-zinc-900 mb-1">비밀번호 변경</h2>
+          <p className="text-xs text-zinc-400 mb-4">현재 비밀번호를 확인 후 새 비밀번호로 변경합니다.</p>
+          <div className="flex flex-col gap-3">
+            <input
+              type="password"
+              placeholder="현재 비밀번호"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black outline-none focus:border-zinc-400"
+            />
+            <input
+              type="password"
+              placeholder="새 비밀번호 (6자 이상)"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black outline-none focus:border-zinc-400"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePasswordChange}
+                disabled={pwSaving || !currentPw || !newPw}
+                className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+              >
+                {pwSaving ? "변경 중..." : "변경"}
+              </button>
+              {pwMsg && <span className={`text-xs ${pwMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{pwMsg.text}</span>}
+            </div>
           </div>
         </section>
       </main>
