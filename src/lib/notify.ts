@@ -83,7 +83,7 @@ export async function notify(
   const personalEmail: string = member.personalEmail ?? "";
   if (!personalEmail) return;
 
-  const subject = `도착 내용 [${MAIL_LABEL}] ${mail.subject}`;
+  const subject = `[${MAIL_LABEL}] ${mail.subject}`;
   const html = buildHtml(mail.from, mail.subject, mail.date);
 
   await fetch(NOTIFY_ENDPOINT, {
