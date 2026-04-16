@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, assertAdmin } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -9,10 +9,7 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
 
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    if (decoded.email !== process.env.ADMIN_EMAIL) {
-      return NextResponse.json({ error: "권한 없음" }, { status: 403 });
-    }
+    if (!await assertAdmin(token)) return NextResponse.json({ error: "권한 없음" }, { status: 403 });
   } catch {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }

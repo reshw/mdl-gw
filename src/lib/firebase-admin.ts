@@ -28,3 +28,11 @@ if (!getApps().length) {
 
 export const adminAuth = getAuth();
 export const adminDb = getFirestore();
+
+export async function assertAdmin(token: string): Promise<boolean> {
+  const decoded = await adminAuth.verifyIdToken(token);
+  const mailEmail = decoded.mailEmail as string | undefined;
+  if (!mailEmail) return false;
+  const doc = await adminDb.collection("members").doc(mailEmail).get();
+  return doc.exists && doc.data()?.isAdmin === true;
+}

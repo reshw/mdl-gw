@@ -22,7 +22,7 @@ import { addPersonalContact } from "@/lib/contacts";
 type Folder = "inbox" | "sent" | "draft" | "trash";
 
 export default function MailPage() {
-  const { user, loading, mailEmail } = useAuth();
+  const { user, loading, mailEmail, isAdmin } = useAuth();
   const router = useRouter();
   const [mails, setMails] = useState<Mail[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -512,7 +512,7 @@ export default function MailPage() {
         </div>
 
         <div className="flex-1" />
-        {user.email === "reshw@naver.com" && (
+        {isAdmin && (
           <button
             onClick={() => router.push("/admin")}
             className="text-left text-sm px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-50"

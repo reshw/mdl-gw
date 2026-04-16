@@ -9,7 +9,6 @@ import {
   getMdlMembers, type Contact,
 } from "@/lib/contacts";
 
-const ADMIN_EMAIL = "reshw@naver.com";
 
 interface EditState {
   id?: string;
@@ -20,7 +19,7 @@ interface EditState {
 }
 
 export default function ContactsPage() {
-  const { user, loading, mailEmail } = useAuth();
+  const { user, loading, mailEmail, isAdmin } = useAuth();
   const router = useRouter();
   const [personal, setPersonal] = useState<Contact[]>([]);
   const [global, setGlobal] = useState<Contact[]>([]);
@@ -44,7 +43,6 @@ export default function ContactsPage() {
 
   if (loading || !user) return null;
 
-  const isAdmin = user.email === ADMIN_EMAIL;
 
   function openNew() {
     setEdit({ name: "", email: "", company: "", type: tab === "members" ? "personal" : tab });

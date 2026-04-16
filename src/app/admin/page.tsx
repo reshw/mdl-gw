@@ -14,18 +14,16 @@ interface SignupRequest {
   createdAt: string;
 }
 
-const ADMIN_EMAIL = "reshw@naver.com";
-
 export default function AdminPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const router = useRouter();
   const [requests, setRequests] = useState<SignupRequest[]>([]);
   const [processing, setProcessing] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
 
   useEffect(() => {
-    if (!loading && (!user || user.email !== ADMIN_EMAIL)) router.push("/");
-  }, [user, loading, router]);
+    if (!loading && (!user || !isAdmin)) router.push("/");
+  }, [user, loading, isAdmin, router]);
 
   const fetchRequests = useCallback(async () => {
     const token = await getIdToken(auth.currentUser!);
