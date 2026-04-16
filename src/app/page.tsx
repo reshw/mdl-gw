@@ -7,8 +7,9 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [id, setId] = useState("");
   const [password, setPassword] = useState("");
+  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -17,7 +18,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, `${id}@${MAIL_DOMAIN}`, password);
       router.push("/mail");
     } catch {
       setError("이메일 또는 비밀번호가 올바르지 않습니다.");
@@ -31,14 +32,17 @@ export default function LoginPage() {
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 relative">
         <h1 className="text-xl font-semibold text-zinc-900 mb-6">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input
-            type="email"
-            placeholder="이메일"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
-          />
+          <div className="flex items-center rounded-lg border border-zinc-200 focus-within:border-zinc-400 overflow-hidden">
+            <input
+              type="text"
+              placeholder="아이디"
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              required
+              className="flex-1 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none"
+            />
+            <span className="pr-4 text-sm text-zinc-400 select-none">@{MAIL_DOMAIN}</span>
+          </div>
           <input
             type="password"
             placeholder="비밀번호"
@@ -59,7 +63,7 @@ export default function LoginPage() {
         <button onClick={() => router.push("/signup")} className="w-full mt-4 text-sm text-zinc-400 hover:text-zinc-600">
           가입 신청
         </button>
-        <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.260415-1</p>
+        <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.2604161357</p>
       </div>
     </div>
   );
