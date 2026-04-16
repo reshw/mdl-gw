@@ -36,7 +36,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (user?.email === ADMIN_EMAIL) fetchRequests();
+    if (isAdmin) fetchRequests();
   }, [user, fetchRequests]);
 
   async function handleAction(requestId: string, action: "approve" | "reject") {
