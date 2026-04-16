@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   let uid: string;
   try {
     const userRecord = await adminAuth.createUser({
-      email: mailAddress,
+      email,
       password,
       displayName: name,
       disabled: true,

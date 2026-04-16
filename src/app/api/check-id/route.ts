@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
 
 const PROJECT_ID = process.env.FIREBASE_ADMIN_PROJECT_ID ?? "";
 
@@ -36,12 +35,30 @@ export async function GET(req: NextRequest) {
   const found = data.some((d: { document?: unknown }) => d.document);
   if (found) return NextResponse.json({ available: false });
 
-  // Firebase Auth 중복 확인
-  try {
-    const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
-    await adminAuth.getUserByEmail(`${id}@${MAIL_DOMAIN}`);
-    return NextResponse.json({ available: false });
-  } catch {
-    return NextResponse.json({ available: true });
-  }
+  // members 컬렉션 중복 확인
+  const memberSnap = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "members" }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: "id" },
+              op: "EQUAL",
+              value: { stringValue: id },
+            },
+          },
+          limit: 1,
+        },
+      }),
+    }
+  );
+  const memberData = await memberSnap.json();
+  const memberFound = memberData.some((d: { document?: unknown }) => d.document);
+  if (memberFound) return NextResponse.json({ available: false });
+
+  return NextResponse.json({ available: true });
 }

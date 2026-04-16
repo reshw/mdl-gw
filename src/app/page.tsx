@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 
@@ -10,7 +10,7 @@ export default function LoginPage() {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -18,10 +18,20 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, `${id}@${MAIL_DOMAIN}`, password);
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "로그인에 실패했습니다.");
+        return;
+      }
+      await signInWithCustomToken(auth, data.token);
       router.push("/mail");
     } catch {
-      setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+      setError("로그인 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
