@@ -9,7 +9,7 @@ import { auth } from "@/lib/firebase";
 import { Eye, EyeOff } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
 
-type Tab = "signature" | "password";
+type Tab = "signature" | "password" | "notifications";
 
 export default function SettingsPage() {
   const { user, loading, mailEmail } = useAuth();
@@ -20,6 +20,35 @@ export default function SettingsPage() {
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // 알림
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [notifSaving, setNotifSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user || !auth.currentUser) return;
+    getIdToken(auth.currentUser).then(token =>
+      fetch("/api/notifications", { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(d => setEmailEnabled(d.emailEnabled !== false))
+    );
+  }, [user]);
+
+  async function handleNotifSave(enabled: boolean) {
+    if (!auth.currentUser) return;
+    setNotifSaving(true);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ emailEnabled: enabled }),
+      });
+      setEmailEnabled(enabled);
+    } finally {
+      setNotifSaving(false);
+    }
+  }
 
   // 비밀번호
   const [currentPw, setCurrentPw] = useState("");
@@ -104,6 +133,12 @@ export default function SettingsPage() {
           className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "password" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
         >
           비밀번호 변경
+        </button>
+        <button
+          onClick={() => setTab("notifications")}
+          className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "notifications" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+        >
+          알림
         </button>
         <div className="flex-1" />
         <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
@@ -202,6 +237,27 @@ export default function SettingsPage() {
                   </button>
                   {pwMsg && <span className={`text-xs ${pwMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{pwMsg.text}</span>}
                 </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === "notifications" && (
+          <>
+            <h1 className="text-lg font-semibold text-zinc-900 mb-6">알림</h1>
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-zinc-900">이메일 알림</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">새 메일 수신 시 개인 이메일로 알림 발송</p>
+                </div>
+                <button
+                  onClick={() => handleNotifSave(!emailEnabled)}
+                  disabled={notifSaving}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${emailEnabled ? "bg-zinc-900" : "bg-zinc-200"}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${emailEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
               </div>
             </section>
           </>

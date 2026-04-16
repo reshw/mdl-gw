@@ -74,9 +74,10 @@ export async function POST(req: NextRequest) {
 
     // MariaDB wp_users 동기화 (non-fatal)
     try {
+      const randomPass = crypto.randomUUID() + "-" + crypto.randomUUID();
       await insertWpUser({
         userLogin: id,
-        userPass: "*",  // WP 직접 로그인 불가 — 통합 Auth 때 해결
+        userPass: randomPass,
         userEmail: personalEmail ?? "",
         displayName: name,
       });

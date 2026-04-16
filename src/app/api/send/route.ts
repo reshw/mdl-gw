@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { notify } from "@/lib/notify";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -114,14 +115,14 @@ export async function POST(req: NextRequest) {
   let fromName: string;
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    fromEmail = decoded.email ?? "";
+    fromEmail = (decoded.mailEmail as string) ?? decoded.email ?? "";
     fromName = decoded.name ?? "";
   } catch {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
 
   const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
-  if (!fromEmail.endsWith(`@${MAIL_DOMAIN}`) && fromEmail !== process.env.ADMIN_EMAIL) {
+  if (!fromEmail.endsWith(`@${MAIL_DOMAIN}`)) {
     return NextResponse.json({ error: "권한 없음" }, { status: 403 });
   }
 
@@ -179,6 +180,7 @@ export async function POST(req: NextRequest) {
         attachments: attachmentMeta,
         createdAt: sentAt,
       });
+      notify(recipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
     } else {
       // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
       const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
@@ -226,6 +228,7 @@ export async function POST(req: NextRequest) {
       attachments: attachmentMeta,
       createdAt: sentAt,
     });
+    notify(ccRecipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
   }
 
   return NextResponse.json({
