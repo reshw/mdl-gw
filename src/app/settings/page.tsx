@@ -7,7 +7,7 @@ import { getSignature, saveSignature } from "@/lib/settings";
 import RichEditor from "@/components/RichEditor";
 
 export default function SettingsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, mailEmail } = useAuth();
   const router = useRouter();
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
@@ -48,7 +48,7 @@ export default function SettingsPage() {
           ← 메일함으로
         </button>
         <div className="flex-1" />
-        <div className="text-xs text-zinc-500 truncate">{user.email}</div>
+        <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
       </aside>
 
       {/* 본문 */}

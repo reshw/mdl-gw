@@ -22,7 +22,7 @@ import { addPersonalContact } from "@/lib/contacts";
 type Folder = "inbox" | "sent" | "draft" | "trash";
 
 export default function MailPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, mailEmail } = useAuth();
   const router = useRouter();
   const [mails, setMails] = useState<Mail[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -70,37 +70,37 @@ export default function MailPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (!user?.email) return;
+    if (!mailEmail) return;
     setSelected(null);
     setSearchQuery("");
     setCheckedIds(new Set());
     setShowLabelDropdown(false);
     if (folder === "draft" || folder === "trash") return;
-    const unsub = subscribeMails(user.email, setMails, folder);
+    const unsub = subscribeMails(mailEmail, setMails, folder);
     return () => unsub();
   }, [user, folder]);
 
   useEffect(() => {
-    if (!user?.email) return;
-    const unsub = subscribeDrafts(user.email, setDrafts);
+    if (!mailEmail) return;
+    const unsub = subscribeDrafts(mailEmail, setDrafts);
     return () => unsub();
   }, [user]);
 
   useEffect(() => {
-    if (!user?.email) return;
-    const unsub = subscribeTrash(user.email, setTrashMails);
+    if (!mailEmail) return;
+    const unsub = subscribeTrash(mailEmail, setTrashMails);
     return () => unsub();
   }, [user]);
 
   useEffect(() => {
-    if (!user?.email) return;
-    const unsub = subscribeInboxUnread(user.email, setInboxUnread);
+    if (!mailEmail) return;
+    const unsub = subscribeInboxUnread(mailEmail, setInboxUnread);
     return () => unsub();
   }, [user]);
 
   useEffect(() => {
-    if (!user?.email) return;
-    const unsub = subscribeLabels(user.email, setLabels);
+    if (!mailEmail) return;
+    const unsub = subscribeLabels(mailEmail, setLabels);
     return () => unsub();
   }, [user]);
 
@@ -296,7 +296,7 @@ export default function MailPage() {
   // 라벨 핸들러
   async function handleCreateLabel() {
     if (!newLabelName.trim() || !user?.email) return;
-    await createLabel(user.email, newLabelName.trim(), newLabelColor);
+    await createLabel(mailEmail!, newLabelName.trim(), newLabelColor);
     setNewLabelName("");
     setNewLabelColor("blue");
     setShowLabelCreate(false);
@@ -532,7 +532,7 @@ export default function MailPage() {
         >
           설정
         </button>
-        <div className="text-xs text-zinc-500 truncate">{user.email}</div>
+        <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
         <button
           onClick={() => signOut(auth).then(() => router.push("/"))}
           className="text-left text-sm px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-50"
@@ -993,7 +993,7 @@ export default function MailPage() {
         )}
       </main>
 
-      {composing && <ComposeModal onClose={handleComposeClose} draft={editingDraft} init={composeInit} />}
+      {composing && <ComposeModal onClose={handleComposeClose} draft={editingDraft} init={composeInit} mailEmail={mailEmail} />}
 
       {/* 라벨 ··· 컨텍스트 메뉴 (fixed — 사이드바 overflow 탈출) */}
       {labelMenuId && labelMenuPos && (() => {

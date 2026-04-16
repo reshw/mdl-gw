@@ -20,7 +20,7 @@ interface EditState {
 }
 
 export default function ContactsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, mailEmail } = useAuth();
   const router = useRouter();
   const [personal, setPersonal] = useState<Contact[]>([]);
   const [global, setGlobal] = useState<Contact[]>([]);
@@ -121,7 +121,7 @@ export default function ContactsPage() {
           ← 메일함으로
         </button>
         <div className="flex-1" />
-        <div className="text-xs text-zinc-500 truncate">{user.email}</div>
+        <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
       </aside>
 
       {/* 본문 */}

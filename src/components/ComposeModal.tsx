@@ -20,9 +20,10 @@ interface Props {
   onClose: () => void;
   draft?: Draft;
   init?: ComposeInit;
+  mailEmail?: string | null;
 }
 
-export default function ComposeModal({ onClose, draft, init }: Props) {
+export default function ComposeModal({ onClose, draft, init, mailEmail }: Props) {
   const [to, setTo] = useState<string[]>(
     draft?.to ? draft.to.split(",").map((s) => s.trim()).filter(Boolean)
     : init?.to ?? []
@@ -63,8 +64,7 @@ export default function ComposeModal({ onClose, draft, init }: Props) {
   // 서명 자동 삽입 (임시저장 불러오기는 제외)
   useEffect(() => {
     if (draft) return;
-    const user = auth.currentUser;
-    if (!user?.email) return;
+    if (!mailEmail) return;
     getSignature().then((sig) => {
       if (!sig) return;
       const initHtml = init?.html ?? "";
@@ -84,13 +84,12 @@ export default function ComposeModal({ onClose, draft, init }: Props) {
   }, [to, subject, html]);
 
   async function handleSaveDraft() {
-    const user = auth.currentUser;
-    if (!user?.email) return;
+    if (!mailEmail) return;
     setSaving(true);
     try {
       const id = await saveDraft({
         id: draftIdRef.current,
-        userEmail: user.email,
+        userEmail: mailEmail,
         to: to.join(", "),
         subject,
         html,
