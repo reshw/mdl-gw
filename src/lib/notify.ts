@@ -17,44 +17,32 @@ function buildHtml(from: string, subject: string, date: string): string {
 <html lang="ko">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <!-- 프리헤더: 받은편지함 미리보기에 표시됨 -->
+  <div style="display:none;max-height:0;overflow:hidden;">${escapeHtml(from)} — ${escapeHtml(subject)}</div>
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" style="max-width:480px;" cellpadding="0" cellspacing="0">
 
-        <!-- 헤더 -->
-        <tr><td style="padding-bottom:16px;">
-          <span style="font-size:13px;font-weight:600;color:#71717a;letter-spacing:.05em;">${MAIL_DOMAIN.toUpperCase()}</span>
-        </td></tr>
-
         <!-- 카드 -->
         <tr><td style="background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;padding:28px 28px 24px;">
 
-          <p style="margin:0 0 20px;font-size:15px;font-weight:600;color:#18181b;">새 메일이 도착했습니다</p>
+          <!-- 발신자 강조 -->
+          <p style="margin:0 0 4px;font-size:16px;font-weight:700;color:#18181b;">${escapeHtml(from)}</p>
+          <p style="margin:0 0 20px;font-size:14px;color:#52525b;">${escapeHtml(subject)}</p>
 
-          <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #f4f4f5;">
-            <tr>
-              <td style="padding:12px 0;border-bottom:1px solid #f4f4f5;width:72px;font-size:12px;font-weight:500;color:#a1a1aa;vertical-align:top;">발신자</td>
-              <td style="padding:12px 0;border-bottom:1px solid #f4f4f5;font-size:13px;color:#18181b;">${escapeHtml(from)}</td>
-            </tr>
-            <tr>
-              <td style="padding:12px 0;border-bottom:1px solid #f4f4f5;font-size:12px;font-weight:500;color:#a1a1aa;vertical-align:top;">제목</td>
-              <td style="padding:12px 0;border-bottom:1px solid #f4f4f5;font-size:13px;color:#18181b;">${escapeHtml(subject)}</td>
-            </tr>
-            <tr>
-              <td style="padding:12px 0;font-size:12px;font-weight:500;color:#a1a1aa;vertical-align:top;">시간</td>
-              <td style="padding:12px 0;font-size:13px;color:#71717a;">${time}</td>
-            </tr>
-          </table>
+          <div style="border-top:1px solid #f4f4f5;padding-top:16px;">
+            <span style="font-size:12px;color:#a1a1aa;">${time}</span>
+          </div>
 
-          <div style="margin-top:24px;text-align:center;">
-            <a href="${APP_URL}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;padding:10px 28px;border-radius:8px;letter-spacing:.01em;">${APP_URL}에서 확인하기</a>
+          <div style="margin-top:20px;text-align:center;">
+            <a href="${APP_URL}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;padding:10px 28px;border-radius:8px;letter-spacing:.01em;">확인하기</a>
           </div>
 
         </td></tr>
 
         <!-- 푸터 -->
         <tr><td style="padding-top:16px;text-align:center;font-size:11px;color:#a1a1aa;">
-          이 알림은 ${MAIL_DOMAIN} 메일 서비스에서 발송되었습니다.
+          ${MAIL_DOMAIN} 메일 서비스
         </td></tr>
 
       </table>
