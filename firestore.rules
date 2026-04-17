@@ -10,17 +10,17 @@ service cloud.firestore {
     // 임시저장 — 본인 문서만
     match /drafts/{draftId} {
       allow read, update, delete: if request.auth != null
-        && request.auth.token.email == resource.data.userEmail;
+        && request.auth.token.mailEmail == resource.data.userEmail;
       allow create: if request.auth != null
-        && request.auth.token.email == request.resource.data.userEmail;
+        && request.auth.token.mailEmail == request.resource.data.userEmail;
     }
 
     // 라벨 — 본인 라벨만
     match /labels/{labelId} {
       allow read, update, delete: if request.auth != null
-        && request.auth.token.email == resource.data.userEmail;
+        && request.auth.token.mailEmail == resource.data.userEmail;
       allow create: if request.auth != null
-        && request.auth.token.email == request.resource.data.userEmail;
+        && request.auth.token.mailEmail == request.resource.data.userEmail;
     }
 
     // mdl 멤버 목록 — 읽기는 로그인 사용자 전체, 쓰기는 서버(admin SDK)만
