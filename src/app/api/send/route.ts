@@ -10,7 +10,6 @@ const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
 async function sha256Hex(data: Uint8Array | string): Promise<string> {
-  // new Uint8Array(src) 는 항상 ArrayBuffer 기반으로 복사 — TS 5.9+ 타입 호환
   const arr = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
   const hash = await crypto.subtle.digest("SHA-256", arr);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -23,7 +22,6 @@ async function hmacHex(key: ArrayBuffer, data: string): Promise<string> {
 }
 
 async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
-  // Uint8Array → new Uint8Array(src) 로 ArrayBuffer 기반으로 정규화
   const k = key instanceof Uint8Array ? new Uint8Array(key) : key;
   const cryptoKey = await crypto.subtle.importKey("raw", k, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
@@ -37,7 +35,7 @@ async function deriveSigningKey(secret: string, date: string): Promise<ArrayBuff
 }
 
 async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<void> {
-  const data = new Uint8Array(body); // ArrayBuffer 기반으로 정규화 (TS 5.9+ 타입 호환)
+  const data = new Uint8Array(body);
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
@@ -85,7 +83,10 @@ async function uploadToR2(key: string, body: Uint8Array, contentType: string): P
     body: data,
   });
 
-  if (!res.ok) throw new Error(`R2 업로드 실패: ${await res.text()}`);
+  if (!res.ok) {
+    const resBody = await res.text();
+    throw new Error(`R2 업로드 실패 (${res.status}): ${resBody}`);
+  }
 }
 
 async function uploadAttachmentsForRecipient(
@@ -129,48 +130,101 @@ export async function POST(req: NextRequest) {
   const { to, cc, bcc, subject, text, html, attachments } = await req.json();
   if (!to || !subject) return NextResponse.json({ error: "받는 사람과 제목을 입력해주세요." }, { status: 400 });
 
-  const toList: string[] = Array.isArray(to) ? to : [to];
-  const ccList: string[] = cc ? (Array.isArray(cc) ? cc : [cc]) : [];
-  const toStr = toList.join(", ");
-  const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
-  const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
+  // R2 env var 사전 체크
+  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY)) {
+    return NextResponse.json({ error: "서버 설정 오류: R2 자격증명이 없습니다. Vercel 환경변수를 확인하세요." }, { status: 500 });
+  }
 
-  const from = fromEmail.endsWith(`@${MAIL_DOMAIN}`)
-    ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
-    : `noreply@${MAIL_DOMAIN}`;
+  try {
+    const toList: string[] = Array.isArray(to) ? to : [to];
+    const ccList: string[] = cc ? (Array.isArray(cc) ? cc : [cc]) : [];
+    const toStr = toList.join(", ");
+    const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
+    const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
 
-  // 트래킹 픽셀 베이스 URL
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const baseUrl = `${proto}://${host}`;
+    const from = fromEmail.endsWith(`@${MAIL_DOMAIN}`)
+      ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
+      : `noreply@${MAIL_DOMAIN}`;
 
-  const sentAt = new Date().toISOString();
-  const trackIds: Record<string, string> = {};
+    // 트래킹 픽셀 베이스 URL
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+    const proto = req.headers.get("x-forwarded-proto") ?? "https";
+    const baseUrl = `${proto}://${host}`;
 
-  // To 수신자별 개별 발송 + 픽셀 삽입
-  for (const recipient of toList) {
-    const trackId = crypto.randomUUID();
-    trackIds[recipient] = trackId;
+    const sentAt = new Date().toISOString();
+    const trackIds: Record<string, string> = {};
 
-    const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
-    const trackedHtml = (html ?? text ?? "") + pixel;
+    // To 수신자별 개별 발송 + 픽셀 삽입
+    for (const recipient of toList) {
+      const trackId = crypto.randomUUID();
+      trackIds[recipient] = trackId;
 
-    // Firestore에 트래킹 문서 생성
-    await adminDb.collection("tracking").doc(trackId).set({
-      recipient,
-      sentAt,
-      openedAt: null,
-    });
+      const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
+      const trackedHtml = (html ?? text ?? "") + pixel;
 
-    if (recipient.endsWith(`@${MAIL_DOMAIN}`)) {
-      // 내부 메일: Resend 우회, Firestore에 직접 저장
+      // Firestore에 트래킹 문서 생성
+      await adminDb.collection("tracking").doc(trackId).set({
+        recipient,
+        sentAt,
+        openedAt: null,
+      });
+
+      if (recipient.endsWith(`@${MAIL_DOMAIN}`)) {
+        // 내부 메일: Resend 우회, Firestore에 직접 저장
+        const mailId = crypto.randomUUID();
+        const attachmentMeta = attachments?.length
+          ? await uploadAttachmentsForRecipient(recipient, mailId, attachments)
+          : [];
+        await adminDb.collection("mails").doc(mailId).set({
+          id: mailId,
+          to: recipient,
+          from: fromEmail,
+          subject,
+          text: text ?? "",
+          html: trackedHtml,
+          date: sentAt,
+          read: false,
+          attachments: attachmentMeta,
+          createdAt: sentAt,
+        });
+        notify(recipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
+      } else {
+        // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
+        const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
+        const externalCcStr = externalCcList.length > 0 ? externalCcList.join(", ") : undefined;
+        const bccList: string[] = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
+        const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
+        const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
+
+        await resend.emails.send({
+          from,
+          to: [recipient],
+          headers: toList.length > 1 ? { "To": toStr } : undefined,
+          ...(externalCcStr ? { cc: externalCcStr } : {}),
+          ...(externalBccStr ? { bcc: externalBccStr } : {}),
+          subject,
+          text: text ?? "",
+          html: trackedHtml,
+          attachments: attachments ?? [],
+        });
+      }
+    }
+
+    // CC 중 내부 도메인 수신자도 내부 직접 저장
+    for (const ccRecipient of ccList) {
+      if (!ccRecipient.endsWith(`@${MAIL_DOMAIN}`)) continue;
+      const trackId = crypto.randomUUID();
+      trackIds[ccRecipient] = trackId;
+      const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
+      const trackedHtml = (html ?? text ?? "") + pixel;
+      await adminDb.collection("tracking").doc(trackId).set({ recipient: ccRecipient, sentAt, openedAt: null });
       const mailId = crypto.randomUUID();
       const attachmentMeta = attachments?.length
-        ? await uploadAttachmentsForRecipient(recipient, mailId, attachments)
+        ? await uploadAttachmentsForRecipient(ccRecipient, mailId, attachments)
         : [];
       await adminDb.collection("mails").doc(mailId).set({
         id: mailId,
-        to: recipient,
+        to: ccRecipient,
         from: fromEmail,
         subject,
         text: text ?? "",
@@ -180,68 +234,25 @@ export async function POST(req: NextRequest) {
         attachments: attachmentMeta,
         createdAt: sentAt,
       });
-      notify(recipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
-    } else {
-      // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
-      const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-      const externalCcStr = externalCcList.length > 0 ? externalCcList.join(", ") : undefined;
-      const bccList: string[] = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
-      const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-      const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
+      notify(ccRecipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
+    }
 
-      await resend.emails.send({
-        from,
-        to: [recipient],
-        // 전체 수신자 목록을 To 헤더에 표시 (수신자 눈에는 그룹메일처럼 보임)
-        headers: toList.length > 1 ? { "To": toStr } : undefined,
-        ...(externalCcStr ? { cc: externalCcStr } : {}),
-        ...(externalBccStr ? { bcc: externalBccStr } : {}),
+    return NextResponse.json({
+      ok: true,
+      sentMail: {
+        to: toStr,
+        ...(ccStr ? { cc: ccStr } : {}),
+        from: fromEmail,
         subject,
         text: text ?? "",
-        html: trackedHtml,
-        attachments: attachments ?? [],
-      });
-    }
-  }
-
-  // CC 중 내부 도메인 수신자도 내부 직접 저장
-  for (const ccRecipient of ccList) {
-    if (!ccRecipient.endsWith(`@${MAIL_DOMAIN}`)) continue;
-    const trackId = crypto.randomUUID();
-    trackIds[ccRecipient] = trackId;
-    const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
-    const trackedHtml = (html ?? text ?? "") + pixel;
-    await adminDb.collection("tracking").doc(trackId).set({ recipient: ccRecipient, sentAt, openedAt: null });
-    const mailId = crypto.randomUUID();
-    const attachmentMeta = attachments?.length
-      ? await uploadAttachmentsForRecipient(ccRecipient, mailId, attachments)
-      : [];
-    await adminDb.collection("mails").doc(mailId).set({
-      id: mailId,
-      to: ccRecipient,
-      from: fromEmail,
-      subject,
-      text: text ?? "",
-      html: trackedHtml,
-      date: sentAt,
-      read: false,
-      attachments: attachmentMeta,
-      createdAt: sentAt,
+        html: html ?? text ?? "",
+        attachmentNames,
+        trackIds,
+      },
     });
-    notify(ccRecipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[send] 오류:", message);
+    return NextResponse.json({ error: `발송 중 오류: ${message}` }, { status: 500 });
   }
-
-  return NextResponse.json({
-    ok: true,
-    sentMail: {
-      to: toStr,
-      ...(ccStr ? { cc: ccStr } : {}),
-      from: fromEmail,
-      subject,
-      text: text ?? "",
-      html: html ?? text ?? "",
-      attachmentNames,
-      trackIds,
-    },
-  });
 }
