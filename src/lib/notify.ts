@@ -72,17 +72,13 @@ export async function notify(
   recipientMailEmail: string,
   mail: { from: string; subject: string; date: string }
 ): Promise<void> {
-  console.log("[notify] start", { recipientMailEmail, endpoint: NOTIFY_ENDPOINT ? "set" : "missing", secret: NOTIFY_SECRET ? "set" : "missing" });
   if (!NOTIFY_ENDPOINT || !NOTIFY_SECRET) return;
 
   const memberDoc = await adminDb.collection("members").doc(recipientMailEmail).get();
-  console.log("[notify] memberDoc.exists:", memberDoc.exists);
   if (!memberDoc.exists) return;
 
   const member = memberDoc.data()!;
-  const emailEnabled = member.notifications?.emailEnabled;
-  console.log("[notify] emailEnabled:", emailEnabled, "personalEmail:", member.personalEmail);
-  if (emailEnabled === false) return;
+  if (member.notifications?.emailEnabled === false) return;
 
   const personalEmail: string = member.personalEmail ?? "";
   if (!personalEmail) return;
@@ -90,11 +86,9 @@ export async function notify(
   const subject = `[${MAIL_LABEL}] ${mail.subject}`;
   const html = buildHtml(mail.from, mail.subject, mail.date);
 
-  console.log("[notify] fetching endpoint for:", personalEmail);
-  const res = await fetch(NOTIFY_ENDPOINT, {
+  await fetch(NOTIFY_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ to: personalEmail, subject, html, secret: NOTIFY_SECRET }),
   });
-  console.log("[notify] endpoint response:", res.status, res.statusText);
 }
