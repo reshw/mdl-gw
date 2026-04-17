@@ -5,7 +5,7 @@ import { notify } from "@/lib/notify";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
+const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? "163aa19364534ce7386a3430efacb2a3";
 const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
@@ -131,8 +131,9 @@ export async function POST(req: NextRequest) {
   if (!to || !subject) return NextResponse.json({ error: "받는 사람과 제목을 입력해주세요." }, { status: 400 });
 
   // R2 env var 사전 체크
-  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY)) {
-    return NextResponse.json({ error: "서버 설정 오류: R2 자격증명이 없습니다. Vercel 환경변수를 확인하세요." }, { status: 500 });
+  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+    const missing = ["CLOUDFLARE_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].filter(k => !process.env[k]);
+    return NextResponse.json({ error: `서버 설정 오류: 환경변수 누락 — ${missing.join(", ")}` }, { status: 500 });
   }
 
   try {
