@@ -171,7 +171,7 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
             <div className="flex gap-2 pr-3 shrink-0 text-xs text-zinc-400">
               <button
                 type="button"
-                onClick={() => { const me = auth.currentUser?.email; if (me && !to.includes(me)) setTo([...to, me]); }}
+                onClick={() => { const me = mailEmail; if (me && !to.includes(me)) setTo([...to, me]); }}
                 className="hover:text-zinc-600"
               >
                 나에게
