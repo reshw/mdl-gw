@@ -73,7 +73,7 @@ export default function LoginPage() {
         <button onClick={() => router.push("/signup")} className="w-full mt-4 text-sm text-zinc-400 hover:text-zinc-600">
           가입 신청
         </button>
-        <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.2604161357</p>
+        <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.{process.env.NEXT_PUBLIC_BUILD_TIME}</p>
       </div>
     </div>
   );

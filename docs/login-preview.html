@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ourim.kr/manage 미리보기</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #f4f4f5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14px;
+    color: #18181b;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #login {
+    width: 340px;
+    padding: 24px 0 32px;
+  }
+
+  /* 로고 */
+  #login-logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+  #login-logo img {
+    height: 48px;
+    width: auto;
+    display: block;
+  }
+
+  /* 카드 */
+  #loginform {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    padding: 28px 28px 24px;
+  }
+
+  .form-group {
+    margin-bottom: 14px;
+  }
+
+  label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+  }
+
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    background: #fafafa;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    color: #18181b;
+    font-size: 14px;
+    height: 40px;
+    padding: 0 12px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+    -webkit-appearance: none;
+  }
+  input[type="text"]:focus,
+  input[type="password"]:focus {
+    border-color: #a1a1aa;
+    box-shadow: 0 0 0 3px rgba(113,113,122,.12);
+  }
+
+  /* 비밀번호 + 눈 아이콘 */
+  .pwd-wrap {
+    position: relative;
+  }
+  .pwd-wrap input {
+    padding-right: 40px;
+  }
+  .pwd-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #a1a1aa;
+    padding: 4px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+  }
+  .pwd-toggle:hover { color: #52525b; }
+  .pwd-toggle svg { width: 16px; height: 16px; }
+
+  /* 기억하기 */
+  .rememberme-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 18px;
+    margin-top: 4px;
+  }
+  .rememberme-row input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: #18181b;
+    cursor: pointer;
+  }
+  .rememberme-row label {
+    font-size: 12.5px;
+    font-weight: 400;
+    color: #71717a;
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  /* 로그인 버튼 */
+  .btn-submit {
+    width: 100%;
+    background: #18181b;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    height: 40px;
+    cursor: pointer;
+    transition: background .15s;
+    letter-spacing: .01em;
+  }
+  .btn-submit:hover { background: #3f3f46; }
+  .btn-submit:active { background: #52525b; }
+
+  /* 하단 링크 */
+  .login-links {
+    text-align: center;
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .login-links a {
+    color: #a1a1aa;
+    font-size: 12px;
+    text-decoration: none;
+    transition: color .12s;
+  }
+  .login-links a:hover { color: #52525b; }
+
+  /* 에러 */
+  .login-error {
+    border-left: 3px solid #ef4444;
+    background: #fef2f2;
+    color: #b91c1c;
+    border-radius: 8px;
+    font-size: 13px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div id="login-logo">
+    <img src="https://img.scnd.kr/ourim_logo.png" alt="ourim" />
+  </div>
+
+  <div id="loginform">
+    <!-- 에러 예시 (평소엔 숨김) -->
+     <div class="login-error">아이디 또는 비밀번호가 올바르지 않습니다.</div>
+
+    <div class="form-group">
+      <label for="user_login">아이디</label>
+      <input type="text" id="user_login" placeholder="아이디 입력" autocomplete="username" />
+    </div>
+
+    <div class="form-group">
+      <label for="user_pass">비밀번호</label>
+      <div class="pwd-wrap">
+        <input type="password" id="user_pass" placeholder="비밀번호 입력" autocomplete="current-password" />
+        <button type="button" class="pwd-toggle" onclick="togglePwd()" title="비밀번호 표시">
+          <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="rememberme-row">
+      <input type="checkbox" id="rememberme" />
+      <label for="rememberme">로그인 상태 유지</label>
+    </div>
+
+    <button class="btn-submit">로그인</button>
+  </div>
+
+  <div class="login-links">
+    <a href="#">비밀번호를 잊으셨나요?</a>
+    <a href="#">← ourim.kr로 돌아가기</a>
+  </div>
+</div>
+
+<script>
+  function togglePwd() {
+    const input = document.getElementById('user_pass');
+    const icon = document.getElementById('eye-icon');
+    if (input.type === 'password') {
+      input.type = 'text';
+      icon.innerHTML = `<path d="M17.94 17.94A10.1 10.1 0 0 1 12 20c-6.4 0-10-8-10-8a18.1 18.1 0 0 1 5.06-6.94M9.9 4.24A9.1 9.1 0 0 1 12 4c6.4 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07A3 3 0 1 1 9.88 9.88"/><line x1="2" y1="2" x2="22" y2="22"/>`;
+    } else {
+      input.type = 'password';
+      icon.innerHTML = `<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`;
+    }
+  }
+</script>
+</body>
+</html>

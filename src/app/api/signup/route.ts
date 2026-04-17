@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   } catch (e: unknown) {
     const code = (e as { code?: string }).code;
     if (code === "auth/email-already-exists") {
-      return NextResponse.json({ error: "이미 신청된 아이디입니다." }, { status: 400 });
+      return NextResponse.json({ error: "이미 사용 중인 이메일입니다." }, { status: 400 });
     }
     throw e;
   }
