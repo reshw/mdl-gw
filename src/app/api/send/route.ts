@@ -41,7 +41,7 @@ async function uploadToR2(key: string, body: Uint8Array, contentType: string): P
 
   const encodedPath = `/${R2_BUCKET}/${key.split("/").map(encodeURIComponent).join("/")}`;
   const url = `${R2_ENDPOINT}${encodedPath}`;
-  const datetime = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+  const datetime = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const date = datetime.slice(0, 8);
   const host = `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
   const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
