@@ -85,7 +85,7 @@ async function uploadToR2(key: string, body: Uint8Array, contentType: string): P
 
   if (!res.ok) {
     const resBody = await res.text();
-    throw new Error(`R2 업로드 실패 (${res.status}): ${resBody}`);
+    throw new Error(`R2 업로드 실패 (${res.status}) url=${url} key=${accessKeyId.slice(0,8)}…: ${resBody}`);
   }
 }
 
