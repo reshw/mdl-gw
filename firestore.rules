@@ -53,5 +53,10 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+
+    // 이메일 변경 OTP 요청 — 서버(admin SDK)만 읽기/쓰기
+    match /email_change_requests/{uid} {
+      allow read, write: if false;
+    }
   }
 }

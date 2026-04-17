@@ -9,7 +9,7 @@ import { auth } from "@/lib/firebase";
 import { Eye, EyeOff } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
 
-type Tab = "signature" | "password" | "notifications";
+type Tab = "signature" | "password" | "notifications" | "account";
 
 export default function SettingsPage() {
   const { user, loading, mailEmail } = useAuth();
@@ -20,6 +20,15 @@ export default function SettingsPage() {
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // 계정 (personalEmail 변경)
+  const [personalEmail, setPersonalEmail] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [emailChangePw, setEmailChangePw] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [emailChangeLoading, setEmailChangeLoading] = useState(false);
+  const [emailChangeMsg, setEmailChangeMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // 알림
   const [emailEnabled, setEmailEnabled] = useState(true);
@@ -32,6 +41,8 @@ export default function SettingsPage() {
         .then(r => r.json())
         .then(d => setEmailEnabled(d.emailEnabled !== false))
     );
+    // Firebase Auth user.email = personalEmail
+    if (auth.currentUser.email) setPersonalEmail(auth.currentUser.email);
   }, [user]);
 
   async function handleNotifSave(enabled: boolean) {
@@ -110,6 +121,56 @@ export default function SettingsPage() {
   const pwMatch = newPw.length > 0 && newPw === confirmPw;
   const pwReady = currentPw.length > 0 && newPw.length >= 6 && pwMatch;
 
+  async function handleRequestEmailChange() {
+    if (!auth.currentUser) return;
+    setEmailChangeLoading(true);
+    setEmailChangeMsg(null);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      const res = await fetch("/api/auth/request-email-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ newEmail, currentPassword: emailChangePw }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEmailChangeMsg({ text: data.error, ok: false });
+      } else {
+        setOtpSent(true);
+        setEmailChangeMsg({ text: `${newEmail}으로 인증 코드를 발송했습니다.`, ok: true });
+      }
+    } finally {
+      setEmailChangeLoading(false);
+    }
+  }
+
+  async function handleConfirmEmailChange() {
+    if (!auth.currentUser) return;
+    setEmailChangeLoading(true);
+    setEmailChangeMsg(null);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      const res = await fetch("/api/auth/confirm-email-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ otp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEmailChangeMsg({ text: data.error, ok: false });
+      } else {
+        setPersonalEmail(newEmail);
+        setNewEmail("");
+        setEmailChangePw("");
+        setOtp("");
+        setOtpSent(false);
+        setEmailChangeMsg({ text: "알림 이메일이 변경되었습니다.", ok: true });
+      }
+    } finally {
+      setEmailChangeLoading(false);
+    }
+  }
+
   return (
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
       {/* 사이드바 */}
@@ -139,6 +200,12 @@ export default function SettingsPage() {
           className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "notifications" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
         >
           알림
+        </button>
+        <button
+          onClick={() => setTab("account")}
+          className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "account" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+        >
+          계정
         </button>
         <div className="flex-1" />
         <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
@@ -259,6 +326,81 @@ export default function SettingsPage() {
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${emailEnabled ? "translate-x-6" : "translate-x-1"}`} />
                 </button>
               </div>
+            </section>
+          </>
+        )}
+
+        {tab === "account" && (
+          <>
+            <h1 className="text-lg font-semibold text-zinc-900 mb-6">계정</h1>
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-sm">
+              <p className="text-xs text-zinc-400 mb-1">현재 알림 이메일</p>
+              <p className="text-sm text-zinc-900 font-medium mb-6">{personalEmail || "—"}</p>
+
+              {!otpSent ? (
+                <div className="flex flex-col gap-3">
+                  <input
+                    type="email"
+                    placeholder="새 이메일 주소"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black outline-none focus:border-zinc-400"
+                  />
+                  <input
+                    type="password"
+                    placeholder="현재 비밀번호"
+                    value={emailChangePw}
+                    onChange={(e) => setEmailChangePw(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black outline-none focus:border-zinc-400"
+                  />
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      onClick={handleRequestEmailChange}
+                      disabled={emailChangeLoading || !newEmail || !emailChangePw}
+                      className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      {emailChangeLoading ? "발송 중..." : "인증 코드 발송"}
+                    </button>
+                    {emailChangeMsg && (
+                      <span className={`text-xs ${emailChangeMsg.ok ? "text-zinc-400" : "text-red-500"}`}>
+                        {emailChangeMsg.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-zinc-500">{newEmail}으로 인증 코드를 발송했습니다. (10분 이내 입력)</p>
+                  <input
+                    type="text"
+                    placeholder="인증 코드 6자리"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black outline-none focus:border-zinc-400 tracking-widest"
+                    maxLength={6}
+                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleConfirmEmailChange}
+                      disabled={emailChangeLoading || otp.length !== 6}
+                      className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      {emailChangeLoading ? "확인 중..." : "변경 완료"}
+                    </button>
+                    <button
+                      onClick={() => { setOtpSent(false); setOtp(""); setEmailChangeMsg(null); }}
+                      className="text-xs text-zinc-400 hover:text-zinc-600"
+                    >
+                      다시 시도
+                    </button>
+                    {emailChangeMsg && (
+                      <span className={`text-xs ${emailChangeMsg.ok ? "text-zinc-400" : "text-red-500"}`}>
+                        {emailChangeMsg.text}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </section>
           </>
         )}
