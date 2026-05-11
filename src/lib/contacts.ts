@@ -51,5 +51,5 @@ export async function deleteGlobalContact(id: string): Promise<void> {
 
 export async function getMdlMembers(): Promise<Contact[]> {
   const snap = await getDocs(collection(db, "members"));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Contact));
+  return snap.docs.map((d) => ({ id: d.id, email: d.id, ...d.data() } as Contact));
 }

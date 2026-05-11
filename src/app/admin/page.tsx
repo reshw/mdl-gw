@@ -70,6 +70,12 @@ export default function AdminPage() {
           <h1 className="text-xl font-semibold text-zinc-900">가입 승인</h1>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => router.push("/admin/setup")}
+              className="text-xs text-zinc-500 hover:text-zinc-900 border border-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-50"
+            >
+              신규 테넌트 설정
+            </button>
+            <button
               onClick={async () => {
                 setMigrating(true);
                 try {

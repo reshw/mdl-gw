@@ -27,12 +27,13 @@ export default function EmailChipInput({ values, onChange, placeholder, contacts
   const suggestions = q.length >= 1
     ? contacts.filter(
         (c) =>
-          (c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) ||
+          c.email &&
+          ((c.name?.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) ||
             (c.company?.toLowerCase().includes(q) ?? false)) &&
-          !values.includes(c.email)
+          !values.includes(c.email))
       ).slice(0, 6)
     : contacts.filter(
-        (c) => c.email.endsWith(`@${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}`) && !values.includes(c.email)
+        (c) => c.email?.endsWith(`@${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}`) && !values.includes(c.email)
       ).slice(0, 6);
 
   function addChip(email: string) {
