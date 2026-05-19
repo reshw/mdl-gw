@@ -4,6 +4,8 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 
+const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
+
 export default function SignupPage() {
   const router = useRouter();
   const [id, setId] = useState("");
@@ -43,7 +45,7 @@ export default function SignupPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (idStatus !== "ok") { setError("아이디 중복 확인을 해주세요."); return; }
+    if (!USE_SMTP && idStatus !== "ok") { setError("아이디 중복 확인을 해주세요."); return; }
     if (password !== passwordConfirm) { setError("비밀번호가 일치하지 않습니다."); return; }
     setError("");
     setLoading(true);
@@ -67,8 +69,12 @@ export default function SignupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50">
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 text-center">
-          <p className="text-zinc-900 font-medium mb-2">가입 신청 완료</p>
-          <p className="text-sm text-zinc-500 mb-6">관리자 승인 후 로그인 가능합니다.</p>
+          <p className="text-zinc-900 font-medium mb-2">
+            {USE_SMTP ? "계정 등록 완료" : "가입 신청 완료"}
+          </p>
+          <p className="text-sm text-zinc-500 mb-6">
+            {USE_SMTP ? "로그인하세요." : "관리자 승인 후 로그인 가능합니다."}
+          </p>
           <button onClick={() => router.push("/")} className="text-sm text-zinc-500 hover:text-zinc-900">
             로그인으로 돌아가기
           </button>
@@ -81,38 +87,50 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-zinc-50">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8">
         <h1 className="text-xl font-semibold text-zinc-900 mb-6">
-          {process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 가입 신청
+          {USE_SMTP ? "계정 등록" : `${process.env.NEXT_PUBLIC_MAIL_DOMAIN || "mdl.kr"} 가입 신청`}
         </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* 아이디 */}
-          <div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="아이디 (영문 소문자/숫자)"
-                value={id}
-                onChange={(e) => { setId(e.target.value); setIdStatus("idle"); setIdMessage(""); }}
-                required
-                className="flex-1 rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
-              />
-              <button
-                type="button"
-                onClick={() => checkId(id)}
-                disabled={!id || idStatus === "checking"}
-                className="rounded-lg border border-zinc-200 px-3 py-2.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 shrink-0"
-              >
-                중복확인
-              </button>
-            </div>
-            {idMessage && (
-              <p className={`text-xs mt-1 ${idStatus === "ok" ? "text-green-600" : "text-red-500"}`}>
-                {idMessage}
+          {USE_SMTP ? (
+            /* SMTP 모드: 풀 이메일 입력 */
+            <input
+              type="email"
+              placeholder="이메일 주소 (예: shy@wm.co.kr)"
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              required
+              className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+            />
+          ) : (
+            /* 기존 모드: username + @domain */
+            <div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="아이디 (영문 소문자/숫자)"
+                  value={id}
+                  onChange={(e) => { setId(e.target.value); setIdStatus("idle"); setIdMessage(""); }}
+                  required
+                  className="flex-1 rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => checkId(id)}
+                  disabled={!id || idStatus === "checking"}
+                  className="rounded-lg border border-zinc-200 px-3 py-2.5 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 shrink-0"
+                >
+                  중복확인
+                </button>
+              </div>
+              {idMessage && (
+                <p className={`text-xs mt-1 ${idStatus === "ok" ? "text-green-600" : "text-red-500"}`}>
+                  {idMessage}
+                </p>
+              )}
+              <p className="text-xs text-zinc-400 mt-1">
+                가입 후 이메일: {id || "아이디"}@{process.env.NEXT_PUBLIC_MAIL_DOMAIN || "mdl.kr"}
               </p>
-            )}
-            <p className="text-xs text-zinc-400 mt-1">
-              가입 후 이메일: {id || "아이디"}@{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"}
-            </p>
-          </div>
+            </div>
+          )}
 
           {/* 이름 */}
           <input
@@ -124,7 +142,8 @@ export default function SignupPage() {
             className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
           />
 
-          {/* 개인 이메일 */}
+          {/* 개인 이메일 — 기존 모드에서만 */}
+          {!USE_SMTP && (
           <input
             type="email"
             placeholder="개인 이메일 (비밀번호 찾기용)"
@@ -133,6 +152,7 @@ export default function SignupPage() {
             required
             className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
           />
+          )}
 
           {/* 비밀번호 */}
           <div className="relative">

@@ -5,11 +5,13 @@ import { signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 
+const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
+
 export default function LoginPage() {
   const router = useRouter();
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
-  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+  const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN || "";
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
@@ -40,19 +42,32 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 relative">
-        <h1 className="text-xl font-semibold text-zinc-900 mb-6">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</h1>
+        <h1 className="text-xl font-semibold text-zinc-900 mb-6">
+          {USE_SMTP ? "메일" : `${MAIL_DOMAIN || "mdl.kr"} 메일`}
+        </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="flex items-center rounded-lg border border-zinc-200 focus-within:border-zinc-400 overflow-hidden">
+          {USE_SMTP ? (
             <input
-              type="text"
-              placeholder="아이디"
+              type="email"
+              placeholder="이메일 주소"
               value={id}
               onChange={(e) => setId(e.target.value)}
               required
-              className="flex-1 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none"
+              className="w-full rounded-lg border border-zinc-200 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
             />
-            <span className="pr-4 text-sm text-zinc-400 select-none">@{MAIL_DOMAIN}</span>
-          </div>
+          ) : (
+            <div className="flex items-center rounded-lg border border-zinc-200 focus-within:border-zinc-400 overflow-hidden">
+              <input
+                type="text"
+                placeholder="아이디"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                required
+                className="flex-1 px-4 py-2.5 text-sm text-black placeholder-zinc-400 outline-none"
+              />
+              <span className="pr-4 text-sm text-zinc-400 select-none">@{MAIL_DOMAIN || "mdl.kr"}</span>
+            </div>
+          )}
           <input
             type="password"
             placeholder="비밀번호"
@@ -71,7 +86,7 @@ export default function LoginPage() {
           </button>
         </form>
         <button onClick={() => router.push("/signup")} className="w-full mt-4 text-sm text-zinc-400 hover:text-zinc-600">
-          가입 신청
+          {USE_SMTP ? "계정 등록" : "가입 신청"}
         </button>
         <p className="absolute bottom-3 right-4 text-xs text-zinc-300">v.{process.env.NEXT_PUBLIC_BUILD_TIME}</p>
       </div>

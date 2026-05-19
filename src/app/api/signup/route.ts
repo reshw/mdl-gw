@@ -2,9 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 
+const USE_SMTP = process.env.MAIL_TRANSPORT === "smtp";
+
 export async function POST(req: NextRequest) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
   const { id, name, email, password } = await req.json();
+
+  if (USE_SMTP) {
+    // SMTP 모드: id = 풀 이메일, tenants에 있으면 바로 Firebase Auth 계정 생성
+    if (!id || !name || !password) {
+      return NextResponse.json({ error: "필수 항목을 입력해주세요." }, { status: 400 });
+    }
+    const tenantDoc = await adminDb.collection("tenants").doc(id).get();
+    if (!tenantDoc.exists) {
+      return NextResponse.json({ error: "EmailArchiver가 먼저 실행되어야 합니다. (node auth.js)" }, { status: 400 });
+    }
+    try {
+      await adminAuth.createUser({ email: id, password, displayName: name, disabled: false });
+    } catch (e: unknown) {
+      const code = (e as { code?: string }).code;
+      if (code === "auth/email-already-exists") {
+        return NextResponse.json({ error: "이미 등록된 계정입니다." }, { status: 400 });
+      }
+      throw e;
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   if (!id || !name || !email || !password) {
     return NextResponse.json({ error: "필수 항목을 입력해주세요." }, { status: 400 });
