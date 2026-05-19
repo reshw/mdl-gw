@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebase";
+import { getPersonalDb } from "@/lib/personal-db";
 import {
   collection,
   query,
@@ -11,7 +11,17 @@ import {
   setDoc,
   deleteDoc,
   Unsubscribe,
+  CollectionReference,
+  DocumentData,
 } from "firebase/firestore";
+
+function mailsCollection(email: string): CollectionReference<DocumentData> {
+  return collection(getPersonalDb(), "mails");
+}
+
+function mailDoc(email: string, mailId: string) {
+  return doc(getPersonalDb(), "mails", mailId);
+}
 
 export interface Mail {
   id: string;
@@ -38,10 +48,9 @@ export function subscribeMails(
   callback: (mails: Mail[]) => void,
   folder: "inbox" | "sent" = "inbox"
 ): Unsubscribe {
-  // 단일 필드 where만 사용 — 복합 인덱스 불필요, 나머지는 클라이언트 필터
   const q = folder === "sent"
-    ? query(collection(db, "mails"), where("from", "==", email))
-    : query(collection(db, "mails"), where("to", "==", email));
+    ? query(mailsCollection(email), where("from", "==", email))
+    : query(mailsCollection(email), where("to", "==", email));
 
   return onSnapshot(q, (snapshot) => {
     const mails = snapshot.docs
@@ -56,7 +65,7 @@ export function subscribeInboxUnread(
   email: string,
   callback: (count: number) => void
 ): Unsubscribe {
-  const q = query(collection(db, "mails"), where("to", "==", email));
+  const q = query(mailsCollection(email), where("to", "==", email));
   return onSnapshot(q, (snapshot) => {
     const count = snapshot.docs
       .map((d) => d.data())
@@ -79,8 +88,8 @@ export function subscribeTrash(
     callback(all);
   }
 
-  const q1 = query(collection(db, "mails"), where("to", "==", email));
-  const q2 = query(collection(db, "mails"), where("from", "==", email));
+  const q1 = query(mailsCollection(email), where("to", "==", email));
+  const q2 = query(mailsCollection(email), where("from", "==", email));
 
   const unsub1 = onSnapshot(q1, (snap) => {
     received = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail)).filter((m) => !!m.trash);
@@ -94,27 +103,26 @@ export function subscribeTrash(
   return () => { unsub1(); unsub2(); };
 }
 
-export async function moveToTrash(mailId: string) {
-  await updateDoc(doc(db, "mails", mailId), { trash: true, read: true });
+export async function moveToTrash(mailId: string, email: string) {
+  await updateDoc(mailDoc(email, mailId), { trash: true, read: true });
 }
 
-export async function restoreFromTrash(mailId: string) {
-  await updateDoc(doc(db, "mails", mailId), { trash: false });
+export async function restoreFromTrash(mailId: string, email: string) {
+  await updateDoc(mailDoc(email, mailId), { trash: false });
 }
 
-export async function permanentDelete(mailId: string) {
-  await deleteDoc(doc(db, "mails", mailId));
+export async function permanentDelete(mailId: string, email: string) {
+  await deleteDoc(mailDoc(email, mailId));
 }
 
-export async function markAsRead(mail: Mail) {
+export async function markAsRead(mail: Mail, email: string) {
   const update: Record<string, string | boolean> = { read: true };
   if (!mail.firstReadAt) update.firstReadAt = new Date().toISOString();
-  await updateDoc(doc(db, "mails", mail.id), update);
+  await updateDoc(mailDoc(email, mail.id), update);
 }
 
-export async function markAsUnread(mailId: string) {
-  // firstReadAt 은 건드리지 않음 — 분쟁 시 최초 열람 시각 보존
-  await updateDoc(doc(db, "mails", mailId), { read: false });
+export async function markAsUnread(mailId: string, email: string) {
+  await updateDoc(mailDoc(email, mailId), { read: false });
 }
 
 export interface Draft {
@@ -131,7 +139,7 @@ export function subscribeDrafts(
   callback: (drafts: Draft[]) => void
 ): Unsubscribe {
   const q = query(
-    collection(db, "drafts"),
+    collection(getPersonalDb(), "drafts"),
     where("userEmail", "==", userEmail)
   );
   return onSnapshot(q, (snapshot) => {
@@ -157,16 +165,16 @@ export async function saveDraft(data: {
     updatedAt: new Date().toISOString(),
   };
   if (data.id) {
-    await setDoc(doc(db, "drafts", data.id), payload);
+    await setDoc(doc(getPersonalDb(), "drafts", data.id), payload);
     return data.id;
   } else {
-    const ref = await addDoc(collection(db, "drafts"), payload);
+    const ref = await addDoc(collection(getPersonalDb(), "drafts"), payload);
     return ref.id;
   }
 }
 
 export async function deleteDraft(draftId: string) {
-  await deleteDoc(doc(db, "drafts", draftId));
+  await deleteDoc(doc(getPersonalDb(), "drafts", draftId));
 }
 
 export interface TrackingStatus {
@@ -179,7 +187,7 @@ export async function getTrackingStatus(trackIds: Record<string, string>): Promi
   const result: Record<string, TrackingStatus> = {};
   await Promise.all(
     Object.entries(trackIds).map(async ([recipient, trackId]) => {
-      const snap = await getDoc(doc(db, "tracking", trackId));
+      const snap = await getDoc(doc(getPersonalDb(), "tracking", trackId));
       if (snap.exists()) {
         result[recipient] = snap.data() as TrackingStatus;
       }
@@ -200,7 +208,7 @@ export async function saveSentMail(data: {
   failReason?: string;
   trackIds?: Record<string, string>;
 }) {
-  await addDoc(collection(db, "mails"), {
+  await addDoc(collection(getPersonalDb(), "mails"), {
     to: data.to,
     ...(data.cc ? { cc: data.cc } : {}),
     from: data.from,

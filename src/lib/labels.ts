@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebase";
+import { getPersonalDb } from "@/lib/personal-db";
 import {
   collection, query, where, onSnapshot,
   addDoc, deleteDoc, doc, updateDoc, arrayUnion, arrayRemove,
@@ -37,7 +37,7 @@ export interface Label {
 }
 
 export function subscribeLabels(userEmail: string, callback: (labels: Label[]) => void): Unsubscribe {
-  const q = query(collection(db, "labels"), where("userEmail", "==", userEmail));
+  const q = query(collection(getPersonalDb(), "labels"), where("userEmail", "==", userEmail));
   return onSnapshot(q, (snap) => {
     const labels = snap.docs
       .map((d) => ({ id: d.id, ...d.data() } as Label))
@@ -47,21 +47,21 @@ export function subscribeLabels(userEmail: string, callback: (labels: Label[]) =
 }
 
 export async function createLabel(userEmail: string, name: string, color: string): Promise<void> {
-  await addDoc(collection(db, "labels"), { userEmail, name, color });
+  await addDoc(collection(getPersonalDb(), "labels"), { userEmail, name, color });
 }
 
 export async function updateLabel(labelId: string, name: string, color: string): Promise<void> {
-  await updateDoc(doc(db, "labels", labelId), { name, color });
+  await updateDoc(doc(getPersonalDb(), "labels", labelId), { name, color });
 }
 
 export async function deleteLabel(labelId: string): Promise<void> {
-  await deleteDoc(doc(db, "labels", labelId));
+  await deleteDoc(doc(getPersonalDb(), "labels", labelId));
 }
 
 export async function addLabelToMail(mailId: string, labelId: string): Promise<void> {
-  await updateDoc(doc(db, "mails", mailId), { labels: arrayUnion(labelId) });
+  await updateDoc(doc(getPersonalDb(), "mails", mailId), { labels: arrayUnion(labelId) });
 }
 
 export async function removeLabelFromMail(mailId: string, labelId: string): Promise<void> {
-  await updateDoc(doc(db, "mails", mailId), { labels: arrayRemove(labelId) });
+  await updateDoc(doc(getPersonalDb(), "mails", mailId), { labels: arrayRemove(labelId) });
 }

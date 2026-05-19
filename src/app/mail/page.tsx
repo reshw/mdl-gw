@@ -156,23 +156,23 @@ export default function MailPage() {
     setSelected(mail);
     setMobilePane("viewer");
     setShowLabelDropdown(false);
-    if (!mail.read) await markAsRead(mail);
+    if (!mail.read) await markAsRead(mail, mailEmail!);
   }
 
   async function handleMarkUnread(mail: Mail) {
-    await markAsUnread(mail.id);
+    await markAsUnread(mail.id, mailEmail!);
     setSelected(null);
   }
 
   async function handleBulkMarkUnread() {
-    await Promise.all([...checkedIds].map((id) => markAsUnread(id)));
+    await Promise.all([...checkedIds].map((id) => markAsUnread(id, mailEmail!)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
     setCheckedIds(new Set());
   }
 
   async function handleBulkMarkRead() {
     const targets = displayedMails.filter((m) => checkedIds.has(m.id) && !m.read);
-    await Promise.all(targets.map((m) => markAsRead(m)));
+    await Promise.all(targets.map((m) => markAsRead(m, mailEmail!)));
     setCheckedIds(new Set());
   }
 
@@ -225,17 +225,17 @@ export default function MailPage() {
   async function handleTrash(mail: Mail, e: React.MouseEvent) {
     e.stopPropagation();
     if (selected?.id === mail.id) setSelected(null);
-    await moveToTrash(mail.id);
+    await moveToTrash(mail.id, mailEmail!);
   }
 
   async function handleRestore(mail: Mail) {
     setSelected(null);
-    await restoreFromTrash(mail.id);
+    await restoreFromTrash(mail.id, mailEmail!);
   }
 
   async function handlePermanentDelete(mail: Mail) {
     setSelected(null);
-    await permanentDelete(mail.id);
+    await permanentDelete(mail.id, mailEmail!);
   }
 
   function toggleCheck(id: string) {
@@ -252,20 +252,20 @@ export default function MailPage() {
   }
 
   async function handleBulkTrash() {
-    await Promise.all([...checkedIds].map((id) => moveToTrash(id)));
+    await Promise.all([...checkedIds].map((id) => moveToTrash(id, mailEmail!)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
     setCheckedIds(new Set());
   }
 
   async function handleBulkRestore() {
-    await Promise.all([...checkedIds].map((id) => restoreFromTrash(id)));
+    await Promise.all([...checkedIds].map((id) => restoreFromTrash(id, mailEmail!)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
     setCheckedIds(new Set());
   }
 
   async function handleBulkPermanentDelete() {
     if (!confirm(`${checkedIds.size}개를 영구 삭제할까요?`)) return;
-    await Promise.all([...checkedIds].map((id) => permanentDelete(id)));
+    await Promise.all([...checkedIds].map((id) => permanentDelete(id, mailEmail!)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
     setCheckedIds(new Set());
   }

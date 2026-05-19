@@ -1,4 +1,5 @@
-import { db, auth } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
+import { getPersonalDb } from "@/lib/personal-db";
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs } from "firebase/firestore";
 
 export interface Contact {
@@ -11,45 +12,45 @@ export interface Contact {
 export async function getPersonalContacts(): Promise<Contact[]> {
   const userEmail = auth.currentUser?.email;
   if (!userEmail) return [];
-  const snap = await getDocs(collection(db, "contacts", userEmail, "personal"));
+  const snap = await getDocs(collection(getPersonalDb(), "contacts", userEmail, "personal"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Contact));
 }
 
 export async function addPersonalContact(name: string, email: string, company?: string): Promise<string> {
   const userEmail = auth.currentUser!.email!;
-  const ref = await addDoc(collection(db, "contacts", userEmail, "personal"), { name, email, ...(company ? { company } : {}) });
+  const ref = await addDoc(collection(getPersonalDb(), "contacts", userEmail, "personal"), { name, email, ...(company ? { company } : {}) });
   return ref.id;
 }
 
 export async function updatePersonalContact(id: string, name: string, email: string, company?: string): Promise<void> {
   const userEmail = auth.currentUser!.email!;
-  await updateDoc(doc(db, "contacts", userEmail, "personal", id), { name, email, company: company ?? "" });
+  await updateDoc(doc(getPersonalDb(), "contacts", userEmail, "personal", id), { name, email, company: company ?? "" });
 }
 
 export async function deletePersonalContact(id: string): Promise<void> {
   const userEmail = auth.currentUser!.email!;
-  await deleteDoc(doc(db, "contacts", userEmail, "personal", id));
+  await deleteDoc(doc(getPersonalDb(), "contacts", userEmail, "personal", id));
 }
 
 export async function getGlobalContacts(): Promise<Contact[]> {
-  const snap = await getDocs(collection(db, "contacts", "global", "entries"));
+  const snap = await getDocs(collection(getPersonalDb(), "contacts", "global", "entries"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Contact));
 }
 
 export async function addGlobalContact(name: string, email: string, company?: string): Promise<string> {
-  const ref = await addDoc(collection(db, "contacts", "global", "entries"), { name, email, ...(company ? { company } : {}) });
+  const ref = await addDoc(collection(getPersonalDb(), "contacts", "global", "entries"), { name, email, ...(company ? { company } : {}) });
   return ref.id;
 }
 
 export async function updateGlobalContact(id: string, name: string, email: string, company?: string): Promise<void> {
-  await updateDoc(doc(db, "contacts", "global", "entries", id), { name, email, company: company ?? "" });
+  await updateDoc(doc(getPersonalDb(), "contacts", "global", "entries", id), { name, email, company: company ?? "" });
 }
 
 export async function deleteGlobalContact(id: string): Promise<void> {
-  await deleteDoc(doc(db, "contacts", "global", "entries", id));
+  await deleteDoc(doc(getPersonalDb(), "contacts", "global", "entries", id));
 }
 
 export async function getMdlMembers(): Promise<Contact[]> {
-  const snap = await getDocs(collection(db, "members"));
+  const snap = await getDocs(collection(getPersonalDb(), "members"));
   return snap.docs.map((d) => ({ id: d.id, email: d.id, ...d.data() } as Contact));
 }
