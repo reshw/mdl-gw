@@ -3,11 +3,11 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 import { FieldValue } from "firebase-admin/firestore";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
 const MAIL_LABEL = MAIL_DOMAIN.split(".")[0].toUpperCase();
 
 export async function POST(req: NextRequest) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
 

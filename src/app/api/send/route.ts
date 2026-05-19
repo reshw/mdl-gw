@@ -5,8 +5,6 @@ import { notify } from "@/lib/notify";
 
 const USE_SMTP = process.env.MAIL_TRANSPORT === "smtp";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? "163aa19364534ce7386a3430efacb2a3";
 const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
@@ -124,6 +122,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
 
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
   if (!USE_SMTP && !fromEmail.endsWith(`@${MAIL_DOMAIN}`)) {
     return NextResponse.json({ error: "권한 없음" }, { status: 403 });

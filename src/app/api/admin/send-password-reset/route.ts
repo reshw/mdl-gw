@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb, assertAdmin } from "@/lib/firebase-admin";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: NextRequest) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
 
