@@ -50,7 +50,7 @@ export function subscribeMails(
 ): Unsubscribe {
   const q = folder === "sent"
     ? query(mailsCollection(email), where("from", "==", email))
-    : query(mailsCollection(email), where("to", "==", email));
+    : query(mailsCollection(email), where("deliveredTo", "==", email));
 
   return onSnapshot(q, (snapshot) => {
     const mails = snapshot.docs
@@ -65,7 +65,7 @@ export function subscribeInboxUnread(
   email: string,
   callback: (count: number) => void
 ): Unsubscribe {
-  const q = query(mailsCollection(email), where("to", "==", email));
+  const q = query(mailsCollection(email), where("deliveredTo", "==", email));
   return onSnapshot(q, (snapshot) => {
     const count = snapshot.docs
       .map((d) => d.data())
@@ -88,7 +88,7 @@ export function subscribeTrash(
     callback(all);
   }
 
-  const q1 = query(mailsCollection(email), where("to", "==", email));
+  const q1 = query(mailsCollection(email), where("deliveredTo", "==", email));
   const q2 = query(mailsCollection(email), where("from", "==", email));
 
   const unsub1 = onSnapshot(q1, (snap) => {
