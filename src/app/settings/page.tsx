@@ -9,7 +9,8 @@ import { auth } from "@/lib/firebase";
 import { Eye, EyeOff } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
 
-type Tab = "signature" | "password" | "notifications" | "account";
+type Tab = "signature" | "password" | "notifications" | "account" | "connection";
+const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
 
 export default function SettingsPage() {
   const { user, loading, mailEmail } = useAuth();
@@ -34,14 +35,40 @@ export default function SettingsPage() {
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [notifSaving, setNotifSaving] = useState(false);
 
+  // 연결 설정 (SMTP 모드)
+  const [conn, setConn] = useState({
+    smtp_host: "", smtp_port: "587", smtp_user: "", smtp_pass: "",
+    imap_host: "", imap_port: "143", imap_user: "", imap_pass: "",
+    fb_apiKey: "", fb_authDomain: "", fb_projectId: "",
+    fb_storageBucket: "", fb_messagingSenderId: "", fb_appId: "",
+  });
+  const [connLoading, setConnLoading] = useState(false);
+  const [connSaved, setConnSaved] = useState(false);
+  const [connMsg, setConnMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
   useEffect(() => {
     if (!user || !auth.currentUser) return;
-    getIdToken(auth.currentUser).then(token =>
+    getIdToken(auth.currentUser).then(token => {
       fetch("/api/notifications", { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
-        .then(d => setEmailEnabled(d.emailEnabled !== false))
-    );
-    // Firebase Auth user.email = personalEmail
+        .then(d => setEmailEnabled(d.emailEnabled !== false));
+      if (USE_SMTP) {
+        fetch("/api/tenant-settings", { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(d => {
+            const fb = d.firebase_client_config ?? {};
+            setConn({
+              smtp_host: d.smtp_host ?? "", smtp_port: String(d.smtp_port ?? 587),
+              smtp_user: d.smtp_user ?? "", smtp_pass: "",
+              imap_host: d.imap_host ?? "", imap_port: String(d.imap_port ?? 143),
+              imap_user: d.imap_user ?? "", imap_pass: "",
+              fb_apiKey: fb.apiKey ?? "", fb_authDomain: fb.authDomain ?? "",
+              fb_projectId: fb.projectId ?? "", fb_storageBucket: fb.storageBucket ?? "",
+              fb_messagingSenderId: fb.messagingSenderId ?? "", fb_appId: fb.appId ?? "",
+            });
+          });
+      }
+    });
     if (auth.currentUser.email) setPersonalEmail(auth.currentUser.email);
   }, [user]);
 
@@ -115,6 +142,43 @@ export default function SettingsPage() {
       }
     } finally {
       setPwSaving(false);
+    }
+  }
+
+  async function handleConnSave() {
+    if (!auth.currentUser) return;
+    setConnLoading(true);
+    setConnMsg(null);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      const body: Record<string, unknown> = {
+        smtp_host: conn.smtp_host, smtp_port: conn.smtp_port,
+        smtp_user: conn.smtp_user,
+        imap_host: conn.imap_host, imap_port: conn.imap_port,
+        imap_user: conn.imap_user,
+      };
+      if (conn.smtp_pass) body.smtp_pass = conn.smtp_pass;
+      if (conn.imap_pass) body.imap_pass = conn.imap_pass;
+      if (conn.fb_projectId) {
+        body.firebase_client_config = {
+          apiKey: conn.fb_apiKey, authDomain: conn.fb_authDomain,
+          projectId: conn.fb_projectId, storageBucket: conn.fb_storageBucket,
+          messagingSenderId: conn.fb_messagingSenderId, appId: conn.fb_appId,
+        };
+      }
+      const res = await fetch("/api/tenant-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setConnMsg({ text: "저장되었습니다. 재로그인하면 적용됩니다.", ok: true });
+        setConn(c => ({ ...c, smtp_pass: "", imap_pass: "" }));
+      } else {
+        setConnMsg({ text: "저장 실패", ok: false });
+      }
+    } finally {
+      setConnLoading(false);
     }
   }
 
@@ -207,6 +271,14 @@ export default function SettingsPage() {
         >
           계정
         </button>
+        {USE_SMTP && (
+          <button
+            onClick={() => setTab("connection")}
+            className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "connection" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+          >
+            연결 설정
+          </button>
+        )}
         <div className="flex-1" />
         <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
       </aside>
@@ -402,6 +474,77 @@ export default function SettingsPage() {
                 </div>
               )}
             </section>
+          </>
+        )}
+
+        {tab === "connection" && USE_SMTP && (
+          <>
+            <h1 className="text-lg font-semibold text-zinc-900 mb-6">연결 설정</h1>
+
+            {/* SMTP */}
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-lg mb-4">
+              <h2 className="text-sm font-semibold text-zinc-700 mb-4">발송 서버 (SMTP)</h2>
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <input placeholder="SMTP 호스트" value={conn.smtp_host} onChange={e => setConn(c => ({ ...c, smtp_host: e.target.value }))}
+                    className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                  <input placeholder="포트" value={conn.smtp_port} onChange={e => setConn(c => ({ ...c, smtp_port: e.target.value }))}
+                    className="w-20 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                </div>
+                <input placeholder="SMTP 사용자 (이메일)" value={conn.smtp_user} onChange={e => setConn(c => ({ ...c, smtp_user: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input type="password" placeholder="SMTP 비밀번호 (변경 시만 입력)" value={conn.smtp_pass} onChange={e => setConn(c => ({ ...c, smtp_pass: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+              </div>
+            </section>
+
+            {/* IMAP */}
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-lg mb-4">
+              <h2 className="text-sm font-semibold text-zinc-700 mb-4">수신 서버 (IMAP / EmailArchiver 참조용)</h2>
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <input placeholder="IMAP 호스트" value={conn.imap_host} onChange={e => setConn(c => ({ ...c, imap_host: e.target.value }))}
+                    className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                  <input placeholder="포트" value={conn.imap_port} onChange={e => setConn(c => ({ ...c, imap_port: e.target.value }))}
+                    className="w-20 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                </div>
+                <input placeholder="IMAP 사용자 (이메일)" value={conn.imap_user} onChange={e => setConn(c => ({ ...c, imap_user: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input type="password" placeholder="IMAP 비밀번호 (변경 시만 입력)" value={conn.imap_pass} onChange={e => setConn(c => ({ ...c, imap_pass: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+              </div>
+            </section>
+
+            {/* Firebase */}
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-lg mb-6">
+              <h2 className="text-sm font-semibold text-zinc-700 mb-1">개인 Firebase 설정</h2>
+              <p className="text-xs text-zinc-400 mb-4">메일 데이터가 저장되는 본인 Firebase 프로젝트 정보</p>
+              <div className="flex flex-col gap-3">
+                <input placeholder="API Key" value={conn.fb_apiKey} onChange={e => setConn(c => ({ ...c, fb_apiKey: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input placeholder="Auth Domain (xxx.firebaseapp.com)" value={conn.fb_authDomain} onChange={e => setConn(c => ({ ...c, fb_authDomain: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input placeholder="Project ID" value={conn.fb_projectId} onChange={e => setConn(c => ({ ...c, fb_projectId: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input placeholder="Storage Bucket" value={conn.fb_storageBucket} onChange={e => setConn(c => ({ ...c, fb_storageBucket: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input placeholder="Messaging Sender ID" value={conn.fb_messagingSenderId} onChange={e => setConn(c => ({ ...c, fb_messagingSenderId: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <input placeholder="App ID" value={conn.fb_appId} onChange={e => setConn(c => ({ ...c, fb_appId: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+              </div>
+            </section>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleConnSave}
+                disabled={connLoading}
+                className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+              >
+                {connLoading ? "저장 중..." : "저장"}
+              </button>
+              {connMsg && <span className={`text-xs ${connMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{connMsg.text}</span>}
+            </div>
           </>
         )}
 
