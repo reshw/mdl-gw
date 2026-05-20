@@ -168,7 +168,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "SMTP 설정이 없습니다. 설정 → 연결 설정에서 입력해주세요." }, { status: 400 });
       }
 
-      const nodemailer = await import("nodemailer");
+      const nodemailerModule = await import("nodemailer");
+      const nodemailer = (nodemailerModule.default ?? nodemailerModule) as typeof import("nodemailer");
       const smtpPort = Number(tenant.smtp_port ?? 587);
       const smtpSecure = tenant.smtp_secure === true;
       const transporter = nodemailer.createTransport({
@@ -202,22 +203,6 @@ export async function POST(req: NextRequest) {
         const msg = smtpErr instanceof Error ? smtpErr.message : String(smtpErr);
         return NextResponse.json({ error: `SMTP 발송 실패: ${msg}` }, { status: 500 });
       }
-
-      // 보낸 메일 Firestore 저장
-      const mailId = crypto.randomUUID();
-      await adminDb.collection("mails").doc(mailId).set({
-        id: mailId,
-        to: toStr,
-        from: fromEmail,
-        subject,
-        text: text ?? "",
-        html: trackedHtml,
-        date: sentAt,
-        read: true,
-        folder: "sent",
-        attachments: attachmentNames.map((name: string) => ({ name })),
-        createdAt: sentAt,
-      });
 
       trackIds[toStr] = trackId;
     } else {
