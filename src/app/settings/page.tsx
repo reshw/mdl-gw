@@ -61,6 +61,7 @@ export default function SettingsPage() {
             setConn({
               smtp_host: d.smtp_host ?? "", smtp_port: String(d.smtp_port ?? 587),
               smtp_user: d.smtp_user ?? "", smtp_pass: "",
+              smtp_secure: d.smtp_secure === true ? "ssl" : "starttls",
               imap_host: d.imap_host ?? "", imap_port: String(d.imap_port ?? 143),
               imap_user: d.imap_user ?? "", imap_pass: "",
               fb_apiKey: fb.apiKey ?? "", fb_authDomain: fb.authDomain ?? "",
