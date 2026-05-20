@@ -184,19 +184,24 @@ export async function POST(req: NextRequest) {
       const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
       const trackedHtml = (html ?? text ?? "") + pixel;
 
-      await transporter.sendMail({
-        from,
-        to: toStr,
-        ...(ccStr ? { cc: ccStr } : {}),
-        subject,
-        text: text ?? "",
-        html: trackedHtml,
-        attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
-          filename: a.filename,
-          content: a.content ? Buffer.from(a.content, "base64") : undefined,
-          contentType: a.content_type,
-        })),
-      });
+      try {
+        await transporter.sendMail({
+          from,
+          to: toStr,
+          ...(ccStr ? { cc: ccStr } : {}),
+          subject,
+          text: text ?? "",
+          html: trackedHtml,
+          attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
+            filename: a.filename,
+            content: a.content ? Buffer.from(a.content, "base64") : undefined,
+            contentType: a.content_type,
+          })),
+        });
+      } catch (smtpErr: unknown) {
+        const msg = smtpErr instanceof Error ? smtpErr.message : String(smtpErr);
+        return NextResponse.json({ error: `SMTP 발송 실패: ${msg}` }, { status: 500 });
+      }
 
       // 보낸 메일 Firestore 저장
       const mailId = crypto.randomUUID();
