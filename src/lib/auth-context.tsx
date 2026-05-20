@@ -14,6 +14,7 @@ interface AuthContextValue {
   loading: boolean;
   mailEmail: string | null;
   isAdmin: boolean;
+  dbReady: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -21,6 +22,7 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   mailEmail: null,
   isAdmin: false,
+  dbReady: false,
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [mailEmail, setMailEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [dbReady, setDbReady] = useState(!USE_SMTP);
 
   useEffect(() => {
     let personalApp: FirebaseApp | null = null;
@@ -64,17 +67,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch (e) {
             console.error("Failed to init personal Firebase:", e);
           }
+          setDbReady(true);
         }
       } else {
         setMailEmail(null);
         setIsAdmin(false);
+        setDbReady(!USE_SMTP);
       }
       setLoading(false);
     });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, mailEmail, isAdmin }}>
+    <AuthContext.Provider value={{ user, loading, mailEmail, isAdmin, dbReady }}>
       {children}
     </AuthContext.Provider>
   );

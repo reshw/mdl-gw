@@ -22,7 +22,7 @@ import { addPersonalContact } from "@/lib/contacts";
 type Folder = "inbox" | "sent" | "draft" | "trash";
 
 export default function MailPage() {
-  const { user, loading, mailEmail, isAdmin } = useAuth();
+  const { user, loading, mailEmail, isAdmin, dbReady } = useAuth();
   const router = useRouter();
   const [mails, setMails] = useState<Mail[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -70,7 +70,7 @@ export default function MailPage() {
   }, [user, loading, router]);
 
   useEffect(() => {
-    if (!mailEmail) return;
+    if (!mailEmail || !dbReady) return;
     setSelected(null);
     setSearchQuery("");
     setCheckedIds(new Set());
@@ -78,31 +78,31 @@ export default function MailPage() {
     if (folder === "draft" || folder === "trash") return;
     const unsub = subscribeMails(mailEmail, setMails, folder);
     return () => unsub();
-  }, [user, folder]);
+  }, [user, folder, dbReady]);
 
   useEffect(() => {
-    if (!mailEmail) return;
+    if (!mailEmail || !dbReady) return;
     const unsub = subscribeDrafts(mailEmail, setDrafts);
     return () => unsub();
-  }, [user]);
+  }, [user, dbReady]);
 
   useEffect(() => {
-    if (!mailEmail) return;
+    if (!mailEmail || !dbReady) return;
     const unsub = subscribeTrash(mailEmail, setTrashMails);
     return () => unsub();
-  }, [user]);
+  }, [user, dbReady]);
 
   useEffect(() => {
-    if (!mailEmail) return;
+    if (!mailEmail || !dbReady) return;
     const unsub = subscribeInboxUnread(mailEmail, setInboxUnread);
     return () => unsub();
-  }, [user]);
+  }, [user, dbReady]);
 
   useEffect(() => {
-    if (!mailEmail) return;
+    if (!mailEmail || !dbReady) return;
     const unsub = subscribeLabels(mailEmail, setLabels);
     return () => unsub();
-  }, [user]);
+  }, [user, dbReady]);
 
   useEffect(() => {
     setTrackingStatus(null);
