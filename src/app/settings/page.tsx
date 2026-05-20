@@ -38,6 +38,7 @@ export default function SettingsPage() {
   // 연결 설정 (SMTP 모드)
   const [conn, setConn] = useState({
     smtp_host: "", smtp_port: "587", smtp_user: "", smtp_pass: "",
+    smtp_secure: "starttls",
     imap_host: "", imap_port: "143", imap_user: "", imap_pass: "",
     fb_apiKey: "", fb_authDomain: "", fb_projectId: "",
     fb_storageBucket: "", fb_messagingSenderId: "", fb_appId: "",
@@ -153,6 +154,7 @@ export default function SettingsPage() {
       const token = await getIdToken(auth.currentUser);
       const body: Record<string, unknown> = {
         smtp_host: conn.smtp_host, smtp_port: conn.smtp_port,
+        smtp_secure: conn.smtp_secure === "ssl",
         smtp_user: conn.smtp_user,
         imap_host: conn.imap_host, imap_port: conn.imap_port,
         imap_user: conn.imap_user,
@@ -491,6 +493,12 @@ export default function SettingsPage() {
                   <input placeholder="포트" value={conn.smtp_port} onChange={e => setConn(c => ({ ...c, smtp_port: e.target.value }))}
                     className="w-20 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
                 </div>
+                <select value={conn.smtp_secure} onChange={e => setConn(c => ({ ...c, smtp_secure: e.target.value }))}
+                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400">
+                  <option value="starttls">STARTTLS (포트 587 권장)</option>
+                  <option value="ssl">SSL/TLS (포트 465)</option>
+                  <option value="none">암호화 없음 (포트 25)</option>
+                </select>
                 <input placeholder="SMTP 사용자 (이메일)" value={conn.smtp_user} onChange={e => setConn(c => ({ ...c, smtp_user: e.target.value }))}
                   className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
                 <input type="password" placeholder="SMTP 비밀번호 (변경 시만 입력)" value={conn.smtp_pass} onChange={e => setConn(c => ({ ...c, smtp_pass: e.target.value }))}

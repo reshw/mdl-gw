@@ -164,13 +164,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "테넌트 설정을 찾을 수 없습니다." }, { status: 403 });
       }
       const tenant = tenantDoc.data()!;
+      if (!tenant.smtp_host || !tenant.smtp_pass) {
+        return NextResponse.json({ error: "SMTP 설정이 없습니다. 설정 → 연결 설정에서 입력해주세요." }, { status: 400 });
+      }
 
       const nodemailer = await import("nodemailer");
+      const smtpPort = Number(tenant.smtp_port ?? 587);
+      const smtpSecure = tenant.smtp_secure === true;
       const transporter = nodemailer.createTransport({
         host: tenant.smtp_host,
-        port: Number(tenant.smtp_port ?? 587),
-        secure: false,
-        auth: { user: tenant.smtp_user, pass: tenant.smtp_pass },
+        port: smtpPort,
+        secure: smtpSecure,
+        ...(smtpSecure ? {} : { requireTLS: smtpPort === 587 }),
+        tls: { rejectUnauthorized: false },
+        auth: { user: tenant.smtp_user || fromEmail, pass: tenant.smtp_pass },
       });
 
       const trackId = crypto.randomUUID();

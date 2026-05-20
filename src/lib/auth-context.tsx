@@ -38,7 +38,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u);
 
-      // Clean up previous personal Firebase app
+      // 구독 먼저 끊고 나서 앱 삭제
+      if (USE_SMTP) setDbReady(false);
       if (personalApp) {
         await deleteApp(personalApp);
         personalApp = null;
