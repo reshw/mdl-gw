@@ -34,7 +34,7 @@ export interface Mail {
   date: string;
   read: boolean;
   createdAt: string;
-  attachments: { name: string; contentType: string; size: number; r2Key: string }[];
+  attachments: { name: string; contentType?: string; size?: number; r2Key?: string; url?: string }[];
   failed?: boolean;
   failReason?: string;
   trash?: boolean;

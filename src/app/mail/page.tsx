@@ -793,6 +793,7 @@ export default function MailPage() {
           </button>
         </div>
         {selected && folder !== "draft" ? (
+          <div className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto p-4 lg:p-8 min-h-0">
             <div className="flex flex-col gap-3 mb-4">
               <h1 className="text-xl font-semibold text-zinc-900 leading-snug">{selected.subject}</h1>
@@ -1006,24 +1007,36 @@ export default function MailPage() {
               )}
             </div>
 
-            {selected.attachments?.length > 0 && (
-              <div className="border-t border-zinc-200 pt-4 mt-6">
-                <p className="text-xs font-medium text-zinc-500 mb-2">첨부파일 ({selected.attachments.length})</p>
-                <div className="flex flex-wrap gap-2">
-                  {selected.attachments.map((att, i) => (
+          </div>
+
+          {selected.attachments?.length > 0 && (
+            <div className="shrink-0 border-t border-zinc-200 bg-white px-4 lg:px-8 py-3">
+              <p className="text-xs font-medium text-zinc-500 mb-2">첨부파일 ({selected.attachments.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {selected.attachments.map((att, i) => {
+                  const href = att.url
+                    ? att.url
+                    : att.r2Key
+                      ? `/api/attachment?key=${encodeURIComponent(att.r2Key)}`
+                      : undefined;
+                  if (!href) return null;
+                  return (
                     <a
                       key={i}
-                      href={`/api/attachment?key=${encodeURIComponent(att.r2Key)}`}
-                      download={att.name}
+                      href={href}
+                      download={att.r2Key ? att.name : undefined}
+                      target={att.url ? "_blank" : undefined}
+                      rel={att.url ? "noopener noreferrer" : undefined}
                       className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-700 hover:bg-zinc-50"
                     >
                       <span>{att.name}</span>
-                      <span className="text-zinc-400">{(att.size / 1024).toFixed(0)}KB</span>
+                      {att.size != null && <span className="text-zinc-400">{(att.size / 1024).toFixed(0)}KB</span>}
                     </a>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
+            </div>
+          )}
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">
