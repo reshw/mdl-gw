@@ -6,6 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "dev:ourim": "env-cmd -f .env.ourim next dev",
+    "dev:exchange": "env-cmd -f .env.exchange next dev",
     "start": "next start",
     "lint": "eslint",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

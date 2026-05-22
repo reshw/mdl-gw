@@ -44,6 +44,7 @@ export default function MailPage() {
   // 라벨 상태
   const [labels, setLabels] = useState<Label[]>([]);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
+  const [activeImapFolder, setActiveImapFolder] = useState<string | null>(null);
   const [showLabelCreate, setShowLabelCreate] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("blue");
@@ -333,6 +334,21 @@ export default function MailPage() {
       setActiveLabel(null);
     } else {
       setActiveLabel(labelId);
+      setActiveImapFolder(null);
+      if (folder === "draft" || folder === "trash") setFolder("inbox");
+      setSelected(null);
+      setCheckedIds(new Set());
+    }
+    setMobilePane("list");
+    setTimeout(() => setShowMobileSidebar(false), 150);
+  }
+
+  function handleActivateImapFolder(folderName: string) {
+    if (activeImapFolder === folderName) {
+      setActiveImapFolder(null);
+    } else {
+      setActiveImapFolder(folderName);
+      setActiveLabel(null);
       if (folder === "draft" || folder === "trash") setFolder("inbox");
       setSelected(null);
       setCheckedIds(new Set());
@@ -360,11 +376,14 @@ export default function MailPage() {
       )
     : currentMails;
 
-  // 라벨 + 안읽은 필터 적용
+  // 라벨 + IMAP 폴더 + 안읽은 필터 적용
   const labelFiltered = activeLabel
     ? filteredMails.filter((m) => m.labels?.includes(activeLabel))
     : filteredMails;
-  const unreadFiltered = unreadOnly ? labelFiltered.filter((m) => !m.read) : labelFiltered;
+  const imapFolderFiltered = activeImapFolder
+    ? labelFiltered.filter((m) => m.folder === activeImapFolder)
+    : labelFiltered;
+  const unreadFiltered = unreadOnly ? imapFolderFiltered.filter((m) => !m.read) : imapFolderFiltered;
   const displayedMails = noLabelOnly
     ? unreadFiltered.filter((m) => !m.labels?.length)
     : unreadFiltered;
@@ -376,9 +395,11 @@ export default function MailPage() {
       )
     : drafts;
 
+  const imapFolders = [...new Set(mails.map((m) => m.folder).filter((f): f is string => !!f && f !== "INBOX"))].sort();
+
   // 현재 헤더 타이틀
   const activeLabelObj = activeLabel ? labels.find((l) => l.id === activeLabel) : null;
-  const listTitle = activeLabelObj ? activeLabelObj.name : folderLabel[folder];
+  const listTitle = activeImapFolder ?? (activeLabelObj ? activeLabelObj.name : folderLabel[folder]);
 
   return (
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
@@ -395,7 +416,7 @@ export default function MailPage() {
         {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (
           <button
             key={f}
-            onClick={() => { setFolder(f); setActiveLabel(null); setMobilePane("list"); setTimeout(() => setShowMobileSidebar(false), 150); }}
+            onClick={() => { setFolder(f); setActiveLabel(null); setActiveImapFolder(null); setMobilePane("list"); setTimeout(() => setShowMobileSidebar(false), 150); }}
             className={`text-left text-sm px-3 py-2 rounded-lg active:bg-zinc-100 ${folder === f && !activeLabel ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
           >
             {folderLabel[f]}
@@ -510,6 +531,24 @@ export default function MailPage() {
             );
           })}
         </div>
+
+        {imapFolders.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-zinc-100">
+            <div className="px-1 mb-1">
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">폴더</span>
+            </div>
+            {imapFolders.map((f) => (
+              <button
+                key={f}
+                onClick={() => handleActivateImapFolder(f)}
+                className={`w-full text-left text-sm px-3 py-1.5 rounded-lg flex items-center gap-2 active:bg-zinc-100 ${activeImapFolder === f ? "bg-zinc-100 font-medium text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
+              >
+                <span className="w-2 h-2 rounded-sm bg-zinc-300 shrink-0" />
+                <span className="flex-1 truncate text-xs">{f}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex-1" />
         {isAdmin && (

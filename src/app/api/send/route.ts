@@ -145,9 +145,11 @@ export async function POST(req: NextRequest) {
     const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
     const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
 
-    const from = fromEmail.endsWith(`@${MAIL_DOMAIN}`)
+    const from = USE_SMTP
       ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
-      : `noreply@${MAIL_DOMAIN}`;
+      : fromEmail.endsWith(`@${MAIL_DOMAIN}`)
+        ? (fromName ? `${fromName} <${fromEmail}>` : fromEmail)
+        : `noreply@${MAIL_DOMAIN}`;
 
     // 트래킹 픽셀 베이스 URL
     const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";

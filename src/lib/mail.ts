@@ -41,6 +41,7 @@ export interface Mail {
   firstReadAt?: string;
   trackIds?: Record<string, string>;
   labels?: string[];
+  folder?: string;
 }
 
 export function subscribeMails(
