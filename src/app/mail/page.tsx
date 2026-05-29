@@ -66,6 +66,20 @@ export default function MailPage() {
   const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
+  // 리사이저
+  const [listWidth, setListWidth] = useState(320);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const isResizing = useRef(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
+
+  useEffect(() => {
+    const check = () => setIsDesktop(window.innerWidth >= 1024);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
@@ -581,7 +595,10 @@ export default function MailPage() {
       </aside>
 
       {/* 메일 목록 */}
-      <div className={`border-r border-zinc-200 bg-white flex-col w-full lg:w-80 ${mobilePane === "viewer" ? "hidden lg:flex" : "flex"}`}>
+      <div
+        className={`border-r border-zinc-200 bg-white flex-col w-full shrink-0 ${mobilePane === "viewer" ? "hidden lg:flex" : "flex"}`}
+        style={{ width: isDesktop ? listWidth : undefined }}
+      >
         <div className="border-b border-zinc-200 px-4 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -780,6 +797,30 @@ export default function MailPage() {
           )}
         </div>
       </div>
+
+      {/* 리사이저 핸들 */}
+      <div
+        className="hidden lg:flex w-1 cursor-col-resize shrink-0 items-center justify-center group hover:bg-blue-400 active:bg-blue-500 transition-colors bg-transparent z-10"
+        onMouseDown={(e) => {
+          isResizing.current = true;
+          resizeStartX.current = e.clientX;
+          resizeStartWidth.current = listWidth;
+          e.preventDefault();
+
+          const onMove = (ev: MouseEvent) => {
+            if (!isResizing.current) return;
+            const delta = ev.clientX - resizeStartX.current;
+            setListWidth(Math.min(600, Math.max(200, resizeStartWidth.current + delta)));
+          };
+          const onUp = () => {
+            isResizing.current = false;
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+        }}
+      />
 
       {/* 메일 뷰어 */}
       <main className={`flex-col min-h-0 flex-1 ${mobilePane === "list" ? "hidden lg:flex" : "flex"}`}>
