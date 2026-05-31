@@ -1,5 +1,3 @@
-import mysql from "mysql2/promise";
-
 function getTenant(): "OURIM" | "MDL" {
   const domain = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
   return domain.includes("ourim") ? "OURIM" : "MDL";
@@ -17,33 +15,27 @@ export async function insertWpUser({
   displayName: string;
 }): Promise<number> {
   const tenant = getTenant();
-  const conn = await mysql.createConnection({
-    host: process.env[`${tenant}_WP_DB_HOST`],
-    port: Number(process.env[`${tenant}_WP_DB_PORT`] ?? 3306),
-    database: process.env[`${tenant}_WP_DB_NAME`],
-    user: process.env[`${tenant}_WP_DB_USER`],
-    password: process.env[`${tenant}_WP_DB_PASS`],
+  const apiUrl = process.env[`${tenant}_WP_API_URL`];
+  const apiSecret = process.env[`${tenant}_WP_API_SECRET`];
+
+  if (!apiUrl || !apiSecret) {
+    throw new Error(`${tenant}_WP_API_URL 또는 ${tenant}_WP_API_SECRET 환경변수 없음`);
+  }
+
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Mailer-Secret": apiSecret,
+    },
+    body: JSON.stringify({ userLogin, userPass, userEmail, displayName }),
   });
 
-  try {
-    const [result] = await conn.execute(
-      `INSERT INTO wp_users
-       (user_login, user_pass, user_nicename, user_email, user_url, user_registered, user_activation_key, user_status, display_name)
-       VALUES (?, ?, ?, ?, '', NOW(), '', 0, ?)`,
-      [userLogin, userPass, userLogin, userEmail, displayName]
-    );
-    const userId = (result as mysql.OkPacket).insertId;
+  const body = await res.json() as { ok?: boolean; userId?: number; error?: string; note?: string };
 
-    await conn.execute(
-      `INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?), (?, ?, ?)`,
-      [
-        userId, "wp_capabilities", 'a:1:{s:10:"subscriber";b:1;}',
-        userId, "wp_user_level", "0",
-      ]
-    );
-
-    return userId;
-  } finally {
-    await conn.end();
+  if (!res.ok || body.error) {
+    throw new Error(body.error ?? `HTTP ${res.status}`);
   }
+
+  return body.userId ?? 0;
 }
