@@ -41,11 +41,9 @@ export async function POST(req: NextRequest) {
   if (body.smtp_host !== undefined) update.smtp_host = body.smtp_host;
   if (body.smtp_port !== undefined) update.smtp_port = Number(body.smtp_port);
   if (body.smtp_user !== undefined) update.smtp_user = body.smtp_user;
-  if (body.smtp_pass !== undefined && body.smtp_pass !== "") update.smtp_pass = body.smtp_pass;
   if (body.imap_host !== undefined) update.imap_host = body.imap_host;
   if (body.imap_port !== undefined) update.imap_port = Number(body.imap_port);
   if (body.imap_user !== undefined) update.imap_user = body.imap_user;
-  if (body.imap_pass !== undefined && body.imap_pass !== "") update.imap_pass = body.imap_pass;
   if (body.firebase_client_config !== undefined) update.firebase_client_config = body.firebase_client_config;
 
   await adminDb.collection("tenants").doc(mailEmail).set(update, { merge: true });

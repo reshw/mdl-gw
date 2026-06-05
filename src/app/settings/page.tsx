@@ -63,7 +63,7 @@ export default function SettingsPage() {
               smtp_user: d.smtp_user ?? "", smtp_pass: "",
               smtp_secure: d.smtp_secure === true ? "ssl" : "starttls",
               imap_host: d.imap_host ?? "", imap_port: String(d.imap_port ?? 143),
-              imap_user: d.imap_user ?? "", imap_pass: "",
+              imap_user: d.imap_user ?? "", imap_pass: "",  // 비번은 UI에 표시 안 함
               fb_apiKey: fb.apiKey ?? "", fb_authDomain: fb.authDomain ?? "",
               fb_projectId: fb.projectId ?? "", fb_storageBucket: fb.storageBucket ?? "",
               fb_messagingSenderId: fb.messagingSenderId ?? "", fb_appId: fb.appId ?? "",
@@ -160,8 +160,6 @@ export default function SettingsPage() {
         imap_host: conn.imap_host, imap_port: conn.imap_port,
         imap_user: conn.imap_user,
       };
-      if (conn.smtp_pass) body.smtp_pass = conn.smtp_pass;
-      if (conn.imap_pass) body.imap_pass = conn.imap_pass;
       if (conn.fb_projectId) {
         body.firebase_client_config = {
           apiKey: conn.fb_apiKey, authDomain: conn.fb_authDomain,
@@ -176,7 +174,6 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         setConnMsg({ text: "저장되었습니다. 재로그인하면 적용됩니다.", ok: true });
-        setConn(c => ({ ...c, smtp_pass: "", imap_pass: "" }));
       } else {
         setConnMsg({ text: "저장 실패", ok: false });
       }
@@ -502,8 +499,7 @@ export default function SettingsPage() {
                 </select>
                 <input placeholder="SMTP 사용자 (이메일)" value={conn.smtp_user} onChange={e => setConn(c => ({ ...c, smtp_user: e.target.value }))}
                   className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
-                <input type="password" placeholder="SMTP 비밀번호 (변경 시만 입력)" value={conn.smtp_pass} onChange={e => setConn(c => ({ ...c, smtp_pass: e.target.value }))}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <p className="text-xs text-zinc-400">비밀번호는 로그인 비밀번호와 동일하게 유지됩니다. 메일 서버 비밀번호가 바뀐 경우 비밀번호 변경 메뉴에서 변경하세요.</p>
               </div>
             </section>
 
@@ -519,8 +515,7 @@ export default function SettingsPage() {
                 </div>
                 <input placeholder="IMAP 사용자 (이메일)" value={conn.imap_user} onChange={e => setConn(c => ({ ...c, imap_user: e.target.value }))}
                   className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
-                <input type="password" placeholder="IMAP 비밀번호 (변경 시만 입력)" value={conn.imap_pass} onChange={e => setConn(c => ({ ...c, imap_pass: e.target.value }))}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400" />
+                <p className="text-xs text-zinc-400">비밀번호는 로그인 비밀번호와 동일하게 유지됩니다. 메일 서버 비밀번호가 바뀐 경우 비밀번호 변경 메뉴에서 변경하세요.</p>
               </div>
             </section>
 

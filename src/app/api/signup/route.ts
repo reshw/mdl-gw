@@ -21,10 +21,12 @@ export async function POST(req: NextRequest) {
       }
       throw e;
     }
-    // tenants 문서 생성 — imap_pass는 Mailer 비번과 동일하게 유지
+    // tenants 문서 생성 — imap/smtp 비번은 Mailer 비번과 동일하게 유지
     await adminDb.collection("tenants").doc(id).set({
       imap_user: id,
       imap_pass: password,
+      smtp_user: id,
+      smtp_pass: password,
       label: name,
       createdAt: new Date().toISOString(),
     }, { merge: true });
