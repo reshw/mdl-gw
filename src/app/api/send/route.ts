@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { notify } from "@/lib/notify";
 
@@ -170,8 +171,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "SMTP 설정이 없습니다. 설정 → 연결 설정에서 입력해주세요." }, { status: 400 });
       }
 
-      const nodemailerModule = await import("nodemailer");
-      const nodemailer = (nodemailerModule.default ?? nodemailerModule) as typeof import("nodemailer");
       const smtpPort = Number(tenant.smtp_port ?? 587);
       const smtpSecure = tenant.smtp_secure === true;
       const transporter = nodemailer.createTransport({
