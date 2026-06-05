@@ -188,6 +188,13 @@ export async function POST(req: NextRequest) {
           contentType: a.content_type ?? "application/octet-stream",
         })),
         trackId,
+        smtp: {
+          host: tenant.smtp_host,
+          port: Number(tenant.smtp_port ?? 587),
+          secure: tenant.smtp_secure === true,
+          user: tenant.smtp_user || fromEmail,
+          pass: tenant.smtp_pass,
+        },
         status: "pending",
         createdAt: sentAt,
       });
