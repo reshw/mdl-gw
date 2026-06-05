@@ -7,13 +7,19 @@ export async function POST(req: NextRequest) {
 
   let uid: string;
   let mailEmail: string;
+  let authEmail: string;
   try {
     const decoded = await adminAuth.verifyIdToken(token);
     uid = decoded.uid;
-    mailEmail = decoded.mailEmail as string;
+    mailEmail = (decoded.mailEmail as string) ?? decoded.email ?? "";
+    // 현재 비밀번호 검증에 쓸 Firebase Auth 이메일 (SMTP 모드는 mailEmail이 곧 auth email)
+    const members = await adminDb.collection("members").doc(mailEmail).get();
+    authEmail = members.data()?.personalEmail ?? decoded.email ?? mailEmail;
   } catch {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
+
+  if (!mailEmail) return NextResponse.json({ error: "계정 정보를 찾을 수 없습니다." }, { status: 400 });
 
   const { currentPassword, newPassword } = await req.json();
   if (!currentPassword || !newPassword) {
@@ -23,13 +29,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "새 비밀번호는 6자 이상이어야 합니다." }, { status: 400 });
   }
 
-  // members에서 personalEmail 조회
-  const doc = await adminDb.collection("members").doc(mailEmail).get();
-  const personalEmail = doc.data()?.personalEmail;
-  if (!personalEmail) {
-    return NextResponse.json({ error: "계정 정보를 찾을 수 없습니다." }, { status: 400 });
-  }
-
   // 현재 비밀번호 검증
   const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
   const verify = await fetch(
@@ -37,7 +36,7 @@ export async function POST(req: NextRequest) {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: personalEmail, password: currentPassword, returnSecureToken: false }),
+      body: JSON.stringify({ email: authEmail, password: currentPassword, returnSecureToken: false }),
     }
   );
   const verifyBody = await verify.json();
