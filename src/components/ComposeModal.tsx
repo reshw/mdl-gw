@@ -148,8 +148,8 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
       await saveSentMail(data.sentMail);
       if (draftIdRef.current) await deleteDraft(draftIdRef.current);
       onClose();
-    } catch {
-      setError("발송 중 오류가 발생했습니다.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "발송 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
