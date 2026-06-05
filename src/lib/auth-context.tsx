@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, User, getAuth, signInAnonymously } from "firebase/auth";
+import { onAuthStateChanged, User, getAuth } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { setPersonalDb } from "@/lib/personal-db";
 import { initializeApp, getApps, deleteApp, FirebaseApp } from "firebase/app";
@@ -77,10 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const appName = `personal-${mail}`;
               const existing = getApps().find((a) => a.name === appName);
               personalApp = existing ?? initializeApp(config, appName);
-              const personalAuth = getAuth(personalApp);
-              if (!personalAuth.currentUser) {
-                await signInAnonymously(personalAuth);
-              }
               setPersonalDb(getFirestore(personalApp));
             }
           } catch (e) {
