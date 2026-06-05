@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = USE_SMTP ? null : new Resend(process.env.RESEND_API_KEY);
   const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
   if (!USE_SMTP && !fromEmail.endsWith(`@${MAIL_DOMAIN}`)) {
     return NextResponse.json({ error: "권한 없음" }, { status: 403 });
@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
           const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
           const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
 
-          await resend.emails.send({
+          await resend!.emails.send({
             from,
             to: [recipient],
             headers: toList.length > 1 ? { "To": toStr } : undefined,
