@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { archiverDb } from "@/lib/archiver-db";
 import { Resend } from "resend";
 
 const USE_SMTP = process.env.MAIL_TRANSPORT === "smtp";
@@ -22,17 +21,14 @@ export async function POST(req: NextRequest) {
       }
       throw e;
     }
-    const tenantData = {
+    await adminDb.collection("tenants").doc(id).set({
       imap_user: id,
       imap_pass: password,
       smtp_user: id,
       smtp_pass: password,
       label: name,
       createdAt: new Date().toISOString(),
-    };
-    // 도메인별 Mailer DB + EmailArchiver DB(mailfwd-reshy)에 동시 저장
-    await adminDb.collection("tenants").doc(id).set(tenantData, { merge: true });
-    if (archiverDb) await archiverDb.collection("tenants").doc(id).set(tenantData, { merge: true });
+    }, { merge: true });
     return NextResponse.json({ ok: true });
   }
 

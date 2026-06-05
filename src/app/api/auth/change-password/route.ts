@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { archiverDb } from "@/lib/archiver-db";
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -46,9 +45,7 @@ export async function POST(req: NextRequest) {
   }
 
   await adminAuth.updateUser(uid, { password: newPassword });
-  // imap/smtp 비번을 Mailer 비번과 동기화 (도메인별 DB + EmailArchiver DB)
-  const passUpdate = { imap_pass: newPassword, smtp_pass: newPassword };
-  await adminDb.collection("tenants").doc(mailEmail).set(passUpdate, { merge: true });
-  if (archiverDb) await archiverDb.collection("tenants").doc(mailEmail).set(passUpdate, { merge: true });
+  // imap/smtp 비번을 Mailer 비번과 동기화
+  await adminDb.collection("tenants").doc(mailEmail).set({ imap_pass: newPassword, smtp_pass: newPassword }, { merge: true });
   return NextResponse.json({ ok: true });
 }
