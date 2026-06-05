@@ -181,6 +181,9 @@ export async function POST(req: NextRequest) {
         ...(smtpSecure ? {} : { requireTLS: smtpPort === 587 }),
         tls: { rejectUnauthorized: false },
         auth: { user: tenant.smtp_user || fromEmail, pass: tenant.smtp_pass },
+        connectionTimeout: 8000,
+        greetingTimeout: 5000,
+        socketTimeout: 8000,
       });
 
       const trackId = crypto.randomUUID();

@@ -142,8 +142,9 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
           attachments,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "발송 중 오류가 발생했습니다."); return; }
+      let data: { error?: string; sentMail?: unknown } = {};
+      try { data = await res.json(); } catch { /* empty/non-JSON response */ }
+      if (!res.ok) { setError(data.error ?? `서버 오류 (${res.status})`); return; }
 
       await saveSentMail(data.sentMail);
       if (draftIdRef.current) await deleteDraft(draftIdRef.current);
