@@ -31,7 +31,7 @@ export const adminDb = getFirestore();
 
 export async function assertAdmin(token: string): Promise<boolean> {
   const decoded = await adminAuth.verifyIdToken(token);
-  const mailEmail = decoded.mailEmail as string | undefined;
+  const mailEmail = (decoded.mailEmail as string | undefined) ?? decoded.email;
   if (!mailEmail) return false;
   const doc = await adminDb.collection("members").doc(mailEmail).get();
   return doc.exists && doc.data()?.isAdmin === true;
