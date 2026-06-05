@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import nodemailer from "nodemailer";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { notify } from "@/lib/notify";
 
@@ -161,7 +160,7 @@ export async function POST(req: NextRequest) {
     const trackIds: Record<string, string> = {};
 
     if (USE_SMTP) {
-      // ── SMTP 모드 ──────────────────────────────────────────
+      // ── SMTP 모드: 발송 큐에 저장 (사내 에이전트가 처리) ──────
       const tenantDoc = await adminDb.collection("tenants").doc(fromEmail).get();
       if (!tenantDoc.exists) {
         return NextResponse.json({ error: "테넌트 설정을 찾을 수 없습니다." }, { status: 403 });
@@ -171,42 +170,27 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "SMTP 설정이 없습니다. 설정 → 연결 설정에서 입력해주세요." }, { status: 400 });
       }
 
-      const smtpPort = Number(tenant.smtp_port ?? 587);
-      const smtpSecure = tenant.smtp_secure === true;
-      const transporter = nodemailer.createTransport({
-        host: tenant.smtp_host,
-        port: smtpPort,
-        secure: smtpSecure,
-        ...(smtpSecure ? {} : { requireTLS: smtpPort === 587 }),
-        tls: { rejectUnauthorized: false },
-        auth: { user: tenant.smtp_user || fromEmail, pass: tenant.smtp_pass },
-        connectionTimeout: 8000,
-        greetingTimeout: 5000,
-        socketTimeout: 8000,
-      });
-
       const trackId = crypto.randomUUID();
       const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
       const trackedHtml = (html ?? text ?? "") + pixel;
 
-      try {
-        await transporter.sendMail({
-          from,
-          to: toStr,
-          ...(ccStr ? { cc: ccStr } : {}),
-          subject,
-          text: text ?? "",
-          html: trackedHtml,
-          attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
-            filename: a.filename,
-            content: a.content ? Buffer.from(a.content, "base64") : undefined,
-            contentType: a.content_type,
-          })),
-        });
-      } catch (smtpErr: unknown) {
-        const msg = smtpErr instanceof Error ? smtpErr.message : String(smtpErr);
-        return NextResponse.json({ error: `SMTP 발송 실패: ${msg}` }, { status: 500 });
-      }
+      await adminDb.collection("send_queue").add({
+        from,
+        fromEmail,
+        to: toStr,
+        ...(ccStr ? { cc: ccStr } : {}),
+        subject,
+        text: text ?? "",
+        html: trackedHtml,
+        attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
+          filename: a.filename,
+          content: a.content ?? null,
+          contentType: a.content_type ?? "application/octet-stream",
+        })),
+        trackId,
+        status: "pending",
+        createdAt: sentAt,
+      });
 
       trackIds[toStr] = trackId;
     } else {
