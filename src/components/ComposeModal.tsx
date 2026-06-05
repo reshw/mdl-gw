@@ -142,7 +142,8 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
           attachments,
         }),
       });
-      let data: { error?: string; sentMail?: unknown } = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = {};
       try { data = await res.json(); } catch { /* empty/non-JSON response */ }
       if (!res.ok) { setError(data.error ?? `서버 오류 (${res.status})`); return; }
 
