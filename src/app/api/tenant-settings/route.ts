@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     imap_port: d.imap_port ?? 143,
     imap_user: d.imap_user ?? "",
     firebase_client_config: d.firebase_client_config ?? null,
+    share_request: d.share_request ?? null,
   });
 }
 

@@ -14,6 +14,12 @@ interface SignupRequest {
   createdAt: string;
 }
 
+interface ShareRequest {
+  email: string;
+  name: string;
+  requestedAt: string;
+}
+
 interface StorageData {
   totalDocs: number;
   tenantCounts: { email: string; label: string; count: number }[];
@@ -30,6 +36,8 @@ export default function AdminPage() {
   const [migrating, setMigrating] = useState(false);
   const [storage, setStorage] = useState<StorageData | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
+  const [shareRequests, setShareRequests] = useState<ShareRequest[]>([]);
+  const [shareProcessing, setShareProcessing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) router.push("/");
@@ -37,17 +45,43 @@ export default function AdminPage() {
 
   const fetchRequests = useCallback(async () => {
     const token = await getIdToken(auth.currentUser!);
-    const res = await fetch("/api/admin/requests", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    setRequests(data.requests ?? []);
+    const [res, shareRes] = await Promise.all([
+      fetch("/api/admin/requests", { headers: { Authorization: `Bearer ${token}` } }),
+      fetch("/api/admin/share-requests", { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (res.ok) {
+      const data = await res.json();
+      setRequests(data.requests ?? []);
+    }
+    if (shareRes.ok) {
+      const data = await shareRes.json();
+      setShareRequests(data.requests ?? []);
+    }
   }, []);
 
   useEffect(() => {
     if (isAdmin) fetchRequests();
   }, [user, fetchRequests]);
+
+  async function handleShareAction(email: string, action: "approve" | "reject") {
+    setShareProcessing(email);
+    try {
+      const token = await getIdToken(auth.currentUser!);
+      const endpoint = action === "approve" ? "/api/admin/approve-share" : "/api/admin/reject-share";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data.error);
+      else setShareRequests((prev) => prev.filter((r) => r.email !== email));
+    } catch {
+      alert("처리 중 오류가 발생했습니다.");
+    } finally {
+      setShareProcessing(null);
+    }
+  }
 
   async function fetchStorage() {
     setStorageLoading(true);
@@ -151,6 +185,40 @@ export default function AdminPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* 같이쓰기 신청 */}
+        {shareRequests.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-lg font-semibold text-zinc-900 mb-4">같이쓰기 신청</h2>
+            <div className="flex flex-col gap-3">
+              {shareRequests.map((req) => (
+                <div key={req.email} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900">{req.name}</p>
+                    <p className="text-xs text-zinc-500">{req.email}</p>
+                    <p className="text-xs text-zinc-400">{new Date(req.requestedAt).toLocaleString("ko-KR")}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleShareAction(req.email, "approve")}
+                      disabled={shareProcessing === req.email}
+                      className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      승인
+                    </button>
+                    <button
+                      onClick={() => handleShareAction(req.email, "reject")}
+                      disabled={shareProcessing === req.email}
+                      className="rounded-lg border border-zinc-200 px-4 py-2 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                    >
+                      거절
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged, User, getAuth } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { setPersonalDb } from "@/lib/personal-db";
 import { initializeApp, getApps, deleteApp, FirebaseApp } from "firebase/app";
@@ -47,7 +47,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (u) {
-        const result = await u.getIdTokenResult();
+        let result = await u.getIdTokenResult();
+        if (!result.claims.mailEmail && USE_SMTP) {
+          result = await u.getIdTokenResult(true);
+        }
         const mail = (result.claims.mailEmail as string) ?? u.email ?? "";
         setMailEmail(mail);
 
@@ -74,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const appName = `personal-${mail}`;
               const existing = getApps().find((a) => a.name === appName);
               personalApp = existing ?? initializeApp(config, appName);
+              await getAuth(personalApp).updateCurrentUser(u);
               setPersonalDb(getFirestore(personalApp));
             }
           } catch (e) {

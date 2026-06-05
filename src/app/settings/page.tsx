@@ -46,6 +46,10 @@ export default function SettingsPage() {
   const [connLoading, setConnLoading] = useState(false);
   const [connSaved, setConnSaved] = useState(false);
   const [connMsg, setConnMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [shareRequest, setShareRequest] = useState<{ status: string; name?: string } | null>(null);
+  const [shareName, setShareName] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareMsg, setShareMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (!user || !auth.currentUser) return;
@@ -63,11 +67,12 @@ export default function SettingsPage() {
               smtp_user: d.smtp_user ?? "", smtp_pass: "",
               smtp_secure: d.smtp_secure === true ? "ssl" : "starttls",
               imap_host: d.imap_host ?? "", imap_port: String(d.imap_port ?? 143),
-              imap_user: d.imap_user ?? "", imap_pass: "",  // 비번은 UI에 표시 안 함
+              imap_user: d.imap_user ?? "", imap_pass: "",
               fb_apiKey: fb.apiKey ?? "", fb_authDomain: fb.authDomain ?? "",
               fb_projectId: fb.projectId ?? "", fb_storageBucket: fb.storageBucket ?? "",
               fb_messagingSenderId: fb.messagingSenderId ?? "", fb_appId: fb.appId ?? "",
             });
+            if (d.share_request) setShareRequest(d.share_request);
           });
       }
     });
@@ -184,6 +189,29 @@ export default function SettingsPage() {
 
   const pwMatch = newPw.length > 0 && newPw === confirmPw;
   const pwReady = currentPw.length > 0 && newPw.length >= 6 && pwMatch;
+
+  async function handleShareRequest() {
+    if (!auth.currentUser || !shareName.trim()) return;
+    setShareLoading(true);
+    setShareMsg(null);
+    try {
+      const token = await getIdToken(auth.currentUser);
+      const res = await fetch("/api/share-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: shareName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setShareMsg({ text: data.error, ok: false });
+      } else {
+        setShareRequest({ status: "pending", name: shareName.trim() });
+        setShareMsg({ text: "신청이 접수되었습니다. 관리자 승인 후 이용 가능합니다.", ok: true });
+      }
+    } finally {
+      setShareLoading(false);
+    }
+  }
 
   async function handleRequestEmailChange() {
     if (!auth.currentUser) return;
@@ -549,6 +577,40 @@ export default function SettingsPage() {
               </button>
               {connMsg && <span className={`text-xs ${connMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{connMsg.text}</span>}
             </div>
+
+            {/* 같이쓰기 신청 */}
+            {!conn.fb_projectId && (
+              <section className="bg-zinc-50 rounded-2xl border border-zinc-200 p-6 max-w-lg mt-2">
+                <h2 className="text-sm font-semibold text-zinc-700 mb-1">같이쓰기 신청</h2>
+                <p className="text-xs text-zinc-400 mb-4">개인 Firebase 없이 공유 저장소 사용을 관리자에게 신청합니다.</p>
+                {shareRequest?.status === "pending" ? (
+                  <p className="text-sm text-zinc-500">신청 접수 완료 — 관리자 승인 대기 중입니다.</p>
+                ) : shareRequest?.status === "approved" ? (
+                  <p className="text-sm text-zinc-500">승인되었습니다. 재로그인하면 적용됩니다.</p>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="이름 (예: 양석환)"
+                      value={shareName}
+                      onChange={(e) => setShareName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleShareRequest(); }}
+                      className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400 bg-white"
+                    />
+                    <button
+                      onClick={handleShareRequest}
+                      disabled={shareLoading || !shareName.trim()}
+                      className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      {shareLoading ? "신청 중..." : "신청"}
+                    </button>
+                  </div>
+                )}
+                {shareMsg && (
+                  <p className={`text-xs mt-2 ${shareMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{shareMsg.text}</p>
+                )}
+              </section>
+            )}
           </>
         )}
 

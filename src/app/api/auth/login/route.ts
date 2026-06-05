@@ -33,7 +33,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
     }
 
-    const customToken = await adminAuth.createCustomToken(body.localId, { mailEmail: id, isAdmin: false });
+    const existingUser = await adminAuth.getUser(body.localId);
+    const existingIsAdmin = existingUser.customClaims?.isAdmin === true;
+    await adminAuth.setCustomUserClaims(body.localId, { mailEmail: id, isAdmin: existingIsAdmin });
+    const customToken = await adminAuth.createCustomToken(body.localId, { mailEmail: id, isAdmin: existingIsAdmin });
     return NextResponse.json({ token: customToken });
   }
 

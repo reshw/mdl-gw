@@ -7,20 +7,24 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // 임시저장 — 본인 문서만
+    // 임시저장 — 본인 문서만 (mailEmail 클레임 또는 email 클레임 허용)
     match /drafts/{draftId} {
       allow read, update, delete: if request.auth != null
-        && request.auth.token.mailEmail == resource.data.userEmail;
+        && (request.auth.token.mailEmail == resource.data.userEmail
+         || request.auth.token.email == resource.data.userEmail);
       allow create: if request.auth != null
-        && request.auth.token.mailEmail == request.resource.data.userEmail;
+        && (request.auth.token.mailEmail == request.resource.data.userEmail
+         || request.auth.token.email == request.resource.data.userEmail);
     }
 
-    // 라벨 — 본인 라벨만
+    // 라벨 — 본인 라벨만 (mailEmail 클레임 또는 email 클레임 허용)
     match /labels/{labelId} {
       allow read, update, delete: if request.auth != null
-        && request.auth.token.mailEmail == resource.data.userEmail;
+        && (request.auth.token.mailEmail == resource.data.userEmail
+         || request.auth.token.email == resource.data.userEmail);
       allow create: if request.auth != null
-        && request.auth.token.mailEmail == request.resource.data.userEmail;
+        && (request.auth.token.mailEmail == request.resource.data.userEmail
+         || request.auth.token.email == request.resource.data.userEmail);
     }
 
     // mdl 멤버 목록 — 읽기는 로그인 사용자 전체, 쓰기는 서버(admin SDK)만
@@ -29,23 +33,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 개인 주소록 — 본인만
+    // 개인 주소록 — 본인만 (mailEmail 클레임 또는 email 클레임 허용)
     match /contacts/{ownerEmail}/personal/{docId} {
       allow read, write: if request.auth != null
-        && request.auth.token.email == ownerEmail;
+        && (request.auth.token.mailEmail == ownerEmail
+         || request.auth.token.email == ownerEmail);
     }
 
     // 전체 주소록 — 읽기는 로그인 사용자 전체, 쓰기는 관리자만
     match /contacts/global/entries/{docId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-        && request.auth.token.email == "reshw@naver.com";
+        && (request.auth.token.isAdmin == true
+         || request.auth.token.email == "reshw@naver.com"
+         || request.auth.token.mailEmail == "reshw@naver.com");
     }
 
     // 가입 신청 — 관리자만
     match /signup_requests/{docId} {
       allow read, write: if request.auth != null
-        && request.auth.token.email == "reshw@naver.com";
+        && (request.auth.token.isAdmin == true
+         || request.auth.token.email == "reshw@naver.com"
+         || request.auth.token.mailEmail == "reshw@naver.com");
     }
 
     // 수신확인 트래킹 — 로그인한 사용자 읽기 허용 (쓰기는 서버만)
