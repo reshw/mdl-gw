@@ -50,11 +50,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await u.getIdTokenResult();
         const mail = (result.claims.mailEmail as string) ?? u.email ?? "";
         setMailEmail(mail);
-        setIsAdmin(result.claims.isAdmin === true);
 
         if (USE_SMTP && mail) {
           try {
             const token = await u.getIdToken();
+            // isAdmin: 커스텀 클레임 우선, 없으면 Firestore members 확인
+            if (result.claims.isAdmin === true) {
+              setIsAdmin(true);
+            } else {
+              const adminRes = await fetch("/api/auth/check-admin", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (adminRes.ok) {
+                const { isAdmin } = await adminRes.json();
+                setIsAdmin(isAdmin === true);
+              }
+            }
             const res = await fetch("/api/tenant-firebase", {
               headers: { Authorization: `Bearer ${token}` },
             });
@@ -69,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.error("Failed to init personal Firebase:", e);
           }
           setDbReady(true);
+        } else {
+          setIsAdmin(result.claims.isAdmin === true);
         }
       } else {
         setMailEmail(null);
