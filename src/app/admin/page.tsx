@@ -14,12 +14,22 @@ interface SignupRequest {
   createdAt: string;
 }
 
+interface StorageData {
+  totalDocs: number;
+  tenantCounts: { email: string; label: string; count: number }[];
+  reads: number | null;
+  writes: number | null;
+  limits: { reads_per_day: number; writes_per_day: number; storage_gib: number };
+}
+
 export default function AdminPage() {
   const { user, loading, isAdmin } = useAuth();
   const router = useRouter();
   const [requests, setRequests] = useState<SignupRequest[]>([]);
   const [processing, setProcessing] = useState<string | null>(null);
   const [migrating, setMigrating] = useState(false);
+  const [storage, setStorage] = useState<StorageData | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) router.push("/");
@@ -38,6 +48,17 @@ export default function AdminPage() {
   useEffect(() => {
     if (isAdmin) fetchRequests();
   }, [user, fetchRequests]);
+
+  async function fetchStorage() {
+    setStorageLoading(true);
+    try {
+      const token = await getIdToken(auth.currentUser!);
+      const res = await fetch("/api/admin/storage", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setStorage(await res.json());
+    } finally {
+      setStorageLoading(false);
+    }
+  }
 
   async function handleAction(requestId: string, action: "approve" | "reject") {
     setProcessing(requestId);
@@ -132,6 +153,83 @@ export default function AdminPage() {
             ))}
           </div>
         )}
+
+        {/* Firestore 사용량 */}
+        <div className="mt-12">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-zinc-900">Firestore 사용량</h2>
+            <button
+              onClick={fetchStorage}
+              disabled={storageLoading}
+              className="text-xs text-zinc-500 hover:text-zinc-900 border border-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {storageLoading ? "조회 중..." : "조회"}
+            </button>
+          </div>
+
+          {storage && (
+            <div className="flex flex-col gap-4">
+              {/* 읽기/쓰기 */}
+              <div className="bg-white rounded-xl border border-zinc-200 p-5 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-zinc-400 mb-1">오늘 읽기</p>
+                  {storage.reads !== null && storage.reads >= 0 ? (
+                    <>
+                      <p className="text-xl font-semibold text-zinc-900">{storage.reads.toLocaleString()}</p>
+                      <div className="mt-2 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-zinc-900 rounded-full"
+                          style={{ width: `${Math.min(100, (storage.reads / storage.limits.reads_per_day) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1">한도 {storage.limits.reads_per_day.toLocaleString()}회/일</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400">Monitoring API 권한 필요</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-400 mb-1">오늘 쓰기</p>
+                  {storage.writes !== null && storage.writes >= 0 ? (
+                    <>
+                      <p className="text-xl font-semibold text-zinc-900">{storage.writes.toLocaleString()}</p>
+                      <div className="mt-2 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-zinc-900 rounded-full"
+                          style={{ width: `${Math.min(100, (storage.writes / storage.limits.writes_per_day) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-1">한도 {storage.limits.writes_per_day.toLocaleString()}회/일</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400">Monitoring API 권한 필요</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 테넌트별 메일 수 */}
+              <div className="bg-white rounded-xl border border-zinc-200 p-5">
+                <div className="flex items-baseline justify-between mb-3">
+                  <p className="text-xs text-zinc-400">저장된 메일 (전체 {storage.totalDocs.toLocaleString()}통 · 추정 {(storage.totalDocs * 5 / 1024).toFixed(1)} MB / 1,024 MB)</p>
+                </div>
+                <div className="mb-3 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-zinc-900 rounded-full"
+                    style={{ width: `${Math.min(100, (storage.totalDocs * 5 / 1024 / 1024) * 100)}%` }}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 mt-4">
+                  {storage.tenantCounts.map((t) => (
+                    <div key={t.email} className="flex items-center justify-between text-sm">
+                      <span className="text-zinc-700">{t.label}</span>
+                      <span className="text-zinc-500">{t.count.toLocaleString()}통</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
