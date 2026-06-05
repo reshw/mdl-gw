@@ -8,13 +8,9 @@ export async function POST(req: NextRequest) {
   const { id, name, email, password } = await req.json();
 
   if (USE_SMTP) {
-    // SMTP 모드: id = 풀 이메일, tenants에 있으면 바로 Firebase Auth 계정 생성
+    // SMTP 모드: id = 풀 이메일 주소
     if (!id || !name || !password) {
       return NextResponse.json({ error: "필수 항목을 입력해주세요." }, { status: 400 });
-    }
-    const tenantDoc = await adminDb.collection("tenants").doc(id).get();
-    if (!tenantDoc.exists) {
-      return NextResponse.json({ error: "EmailArchiver가 먼저 실행되어야 합니다. (node auth.js)" }, { status: 400 });
     }
     try {
       await adminAuth.createUser({ email: id, password, displayName: name, disabled: false });
@@ -25,6 +21,13 @@ export async function POST(req: NextRequest) {
       }
       throw e;
     }
+    // tenants 문서 생성 — imap_pass는 Mailer 비번과 동일하게 유지
+    await adminDb.collection("tenants").doc(id).set({
+      imap_user: id,
+      imap_pass: password,
+      label: name,
+      createdAt: new Date().toISOString(),
+    }, { merge: true });
     return NextResponse.json({ ok: true });
   }
 

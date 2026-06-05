@@ -46,5 +46,7 @@ export async function POST(req: NextRequest) {
   }
 
   await adminAuth.updateUser(uid, { password: newPassword });
+  // IMAP 비번을 Mailer 비번과 동기화
+  await adminDb.collection("tenants").doc(mailEmail).set({ imap_pass: newPassword }, { merge: true });
   return NextResponse.json({ ok: true });
 }
