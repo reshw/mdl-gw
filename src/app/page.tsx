@@ -43,7 +43,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-zinc-50">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-zinc-200 p-8 relative">
         <h1 className="text-xl font-semibold text-zinc-900 mb-6">
-          {USE_SMTP ? "메일" : `${MAIL_DOMAIN || "mdl.kr"} 메일`}
+          {process.env.NEXT_PUBLIC_APP_NAME ?? (USE_SMTP ? "메일" : `${MAIL_DOMAIN || "mdl.kr"} 메일`)}
         </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {USE_SMTP ? (

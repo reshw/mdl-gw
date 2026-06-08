@@ -13,11 +13,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME
+  ?? `${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일`;
 
 export const metadata: Metadata = {
-  title: `${MAIL_DOMAIN} 메일`,
-  description: `${MAIL_DOMAIN} 그룹웨어 메일`,
+  title: APP_NAME,
+  description: APP_NAME,
 };
 
 export const viewport = {

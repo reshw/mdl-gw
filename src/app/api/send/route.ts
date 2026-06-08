@@ -34,12 +34,12 @@ async function deriveSigningKey(secret: string, date: string): Promise<ArrayBuff
   return hmacRaw(kService, "aws4_request");
 }
 
-async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<void> {
+async function uploadToR2(key: string, body: Uint8Array, contentType: string, bucket: string = R2_BUCKET): Promise<void> {
   const data = new Uint8Array(body);
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
-  const encodedPath = `/${R2_BUCKET}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const encodedPath = `/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
   const url = `${R2_ENDPOINT}${encodedPath}`;
   const datetime = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const date = datetime.slice(0, 8);
@@ -131,8 +131,8 @@ export async function POST(req: NextRequest) {
   const { to, cc, bcc, subject, text, html, attachments } = await req.json();
   if (!to || !subject) return NextResponse.json({ error: "받는 사람과 제목을 입력해주세요." }, { status: 400 });
 
-  // R2 env var 사전 체크 (Resend 모드에서만)
-  if (!USE_SMTP && attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
+  // R2 env var 사전 체크
+  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
     const missing = ["CLOUDFLARE_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].filter(k => !process.env[k]);
     return NextResponse.json({ error: `서버 설정 오류: 환경변수 누락 — ${missing.join(", ")}` }, { status: 500 });
   }
@@ -171,10 +171,28 @@ export async function POST(req: NextRequest) {
       }
 
       const trackId = crypto.randomUUID();
+      const jobId = crypto.randomUUID();
       const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
       const trackedHtml = (html ?? text ?? "") + pixel;
 
-      await adminDb.collection("send_queue").add({
+      // 첨부파일을 R2에 업로드 (base64를 Firestore에 직접 넣지 않음 — 1MB 제한 회피)
+      // 데몬이 R2에서 내려받아 OneDrive에 영구 보관 후 SMTP 발송, R2는 발송 완료 후 삭제
+      const smtpBucket = process.env.CF_R2_BUCKET ?? R2_BUCKET;
+      const queueAttachments = attachments?.length
+        ? await Promise.all(
+            (attachments as { filename?: string; content?: string; content_type?: string }[]).map(async (a) => {
+              const filename = a.filename ?? "attachment";
+              const contentType = a.content_type ?? "application/octet-stream";
+              if (!a.content) return { filename, r2Key: null, contentType, size: 0 };
+              const body = Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0));
+              const r2Key = `mailAttachments/${jobId}/${filename}`;
+              await uploadToR2(r2Key, body, contentType, smtpBucket);
+              return { filename, r2Key, contentType, size: body.byteLength };
+            })
+          )
+        : [];
+
+      await adminDb.collection("mailQueue").add({
         from,
         fromEmail,
         to: toStr,
@@ -182,11 +200,7 @@ export async function POST(req: NextRequest) {
         subject,
         text: text ?? "",
         html: trackedHtml,
-        attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
-          filename: a.filename,
-          content: a.content ?? null,
-          contentType: a.content_type ?? "application/octet-stream",
-        })),
+        attachments: queueAttachments,
         trackId,
         smtp: {
           host: tenant.smtp_host,
