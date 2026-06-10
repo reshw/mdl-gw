@@ -65,6 +65,7 @@ export default function MailPage() {
 
   // 데몬 오류 토스트
   const [daemonError, setDaemonError] = useState<string | null>(null);
+  const [daemonLastSuccess, setDaemonLastSuccess] = useState<string | null>(null);
 
   // 모바일 상태
   const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
@@ -92,7 +93,9 @@ export default function MailPage() {
   useEffect(() => {
     if (!mailEmail) return;
     const unsub = onSnapshot(doc(db, "tenants", mailEmail), (snap) => {
-      setDaemonError(snap.data()?.daemon_error ?? null);
+      const data = snap.data();
+      setDaemonError(data?.daemon_error ?? null);
+      setDaemonLastSuccess(data?.daemon_last_success ?? null);
     });
     return () => unsub();
   }, [mailEmail]);
@@ -433,7 +436,12 @@ export default function MailPage() {
       {/* 데몬 오류 토스트 */}
       {daemonError && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3 rounded-xl shadow-lg max-w-sm w-full">
-          <span className="flex-1">{daemonError}</span>
+          <div className="flex-1 flex flex-col gap-1">
+            <span>{daemonError}</span>
+            {daemonLastSuccess && (
+              <span className="text-xs text-red-400">최종 백업: {daemonLastSuccess}</span>
+            )}
+          </div>
           <button onClick={() => setDaemonError(null)} className="text-red-400 hover:text-red-600 shrink-0">✕</button>
         </div>
       )}
@@ -607,6 +615,9 @@ export default function MailPage() {
           설정
         </button>
         <div className="text-xs text-zinc-500 truncate">{mailEmail}</div>
+        {!daemonError && daemonLastSuccess && (
+          <div className="text-xs text-zinc-400">최종 백업: {daemonLastSuccess}</div>
+        )}
         <button
           onClick={() => signOut(auth).then(() => router.push("/"))}
           className="text-left text-sm px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-50"
