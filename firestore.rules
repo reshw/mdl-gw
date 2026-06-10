@@ -67,5 +67,13 @@ service cloud.firestore {
     match /email_change_requests/{uid} {
       allow read, write: if false;
     }
+
+    // 테넌트 설정 — 본인 문서 읽기만 허용 (daemon_error 등 상태 수신용)
+    match /tenants/{email} {
+      allow read: if request.auth != null
+        && (request.auth.token.mailEmail == email
+         || request.auth.token.email == email);
+      allow write: if false;
+    }
   }
 }

@@ -5,7 +5,8 @@ import { Funnel, Mail as MailIcon, MailOpen, Square, CheckSquare } from "lucide-
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   subscribeMails, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
   subscribeTrash, moveToTrash, restoreFromTrash, permanentDelete,
@@ -62,6 +63,9 @@ export default function MailPage() {
   const editColorInputRef = useRef<HTMLInputElement>(null);
   const [deleteLabelConfirm, setDeleteLabelConfirm] = useState<Label | null>(null);
 
+  // 데몬 오류 토스트
+  const [daemonError, setDaemonError] = useState<string | null>(null);
+
   // 모바일 상태
   const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -83,6 +87,15 @@ export default function MailPage() {
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
+
+  // 데몬 오류 구독 (tenants/{mailEmail}.daemon_error)
+  useEffect(() => {
+    if (!mailEmail) return;
+    const unsub = onSnapshot(doc(db, "tenants", mailEmail), (snap) => {
+      setDaemonError(snap.data()?.daemon_error ?? null);
+    });
+    return () => unsub();
+  }, [mailEmail]);
 
   useEffect(() => {
     if (!mailEmail || !dbReady) return;
@@ -417,6 +430,14 @@ export default function MailPage() {
 
   return (
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
+      {/* 데몬 오류 토스트 */}
+      {daemonError && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3 rounded-xl shadow-lg max-w-sm w-full">
+          <span className="flex-1">{daemonError}</span>
+          <button onClick={() => setDaemonError(null)} className="text-red-400 hover:text-red-600 shrink-0">✕</button>
+        </div>
+      )}
+
       {/* 모바일 사이드바 오버레이 */}
       {showMobileSidebar && (
         <div className="fixed inset-0 bg-black/20 z-30 lg:hidden" onClick={() => setShowMobileSidebar(false)} />

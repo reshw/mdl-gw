@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, getAuth } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { setPersonalDb } from "@/lib/personal-db";
 import { initializeApp, getApps, deleteApp, FirebaseApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
@@ -74,10 +74,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
             if (res.ok) {
               const config = await res.json();
-              const appName = `personal-${mail}`;
-              const existing = getApps().find((a) => a.name === appName);
-              personalApp = existing ?? initializeApp(config, appName);
-              setPersonalDb(getFirestore(personalApp));
+              if (config.projectId === process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+                setPersonalDb(db);
+              } else {
+                const appName = `personal-${mail}`;
+                const existing = getApps().find((a) => a.name === appName);
+                personalApp = existing ?? initializeApp(config, appName);
+                setPersonalDb(getFirestore(personalApp));
+              }
             }
           } catch (e) {
             console.error("Failed to init personal Firebase:", e);
