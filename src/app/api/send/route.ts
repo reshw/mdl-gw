@@ -264,7 +264,10 @@ export async function POST(req: NextRequest) {
             subject,
             text: text ?? "",
             html: trackedHtml,
-            attachments: attachments ?? [],
+            attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
+              filename: a.filename,
+              content: a.content ? Buffer.from(a.content, "base64") : undefined,
+            })),
           });
         }
       }

@@ -6,13 +6,18 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  getDocs,
   updateDoc,
   addDoc,
   setDoc,
   deleteDoc,
+  orderBy,
+  limit,
+  startAfter,
   Unsubscribe,
   CollectionReference,
   DocumentData,
+  QueryConstraint,
 } from "firebase/firestore";
 
 function mailsCollection(email: string): CollectionReference<DocumentData> {
@@ -42,24 +47,97 @@ export interface Mail {
   trackIds?: Record<string, string>;
   labels?: string[];
   folder?: string;
+  type?: "sent";
 }
 
-export function subscribeMails(
+export interface MailListOpts {
+  folder: "inbox" | "sent";
+  imapFolder?: string | null;
+  labelId?: string | null;
+  pageSize?: number;
+}
+
+const DEFAULT_PAGE_SIZE = 50;
+
+function buildBaseConstraints(email: string, opts: MailListOpts): QueryConstraint[] {
+  const constraints: QueryConstraint[] = [];
+  if (opts.folder === "sent") {
+    constraints.push(where("from", "==", email));
+  } else {
+    constraints.push(where("deliveredTo", "==", email));
+  }
+  if (opts.imapFolder) constraints.push(where("folder", "==", opts.imapFolder));
+  if (opts.labelId) constraints.push(where("labels", "array-contains", opts.labelId));
+  return constraints;
+}
+
+function postFilter(mails: Mail[], opts: MailListOpts): Mail[] {
+  return mails.filter((m) =>
+    !m.trash && (opts.folder === "sent" ? m.type === "sent" : m.type !== "sent")
+  );
+}
+
+// 첫 페이지(기본 50건) 실시간 구독 — 새 메일 도착하면 자동 갱신
+export function subscribeMailsFirstPage(
   email: string,
-  callback: (mails: Mail[]) => void,
-  folder: "inbox" | "sent" = "inbox"
+  callback: (mails: Mail[], hasMore: boolean) => void,
+  opts: MailListOpts
 ): Unsubscribe {
-  const q = folder === "sent"
-    ? query(mailsCollection(email), where("from", "==", email))
-    : query(mailsCollection(email), where("deliveredTo", "==", email));
+  const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
+  const q = query(
+    mailsCollection(email),
+    ...buildBaseConstraints(email, opts),
+    orderBy("createdAt", "desc"),
+    limit(pageSize + 1)
+  );
 
   return onSnapshot(q, (snapshot) => {
-    const mails = snapshot.docs
-      .map((d) => ({ id: d.id, ...d.data() } as Mail))
-      .filter((m) => !m.trash && (folder === "sent" ? (m as any).type === "sent" : (m as any).type !== "sent"))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    callback(mails);
+    const docs = snapshot.docs;
+    const hasMore = docs.length > pageSize;
+    const page = docs.slice(0, pageSize);
+    const mails = postFilter(
+      page.map((d) => ({ id: d.id, ...d.data() } as Mail)),
+      opts
+    );
+    callback(mails, hasMore);
   });
+}
+
+// "더 보기" — 옛날 메일은 one-shot 페치 (실시간 갱신 불필요)
+export async function loadMoreMails(
+  email: string,
+  opts: MailListOpts,
+  afterCreatedAt: string
+): Promise<{ mails: Mail[]; hasMore: boolean }> {
+  const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
+  const q = query(
+    mailsCollection(email),
+    ...buildBaseConstraints(email, opts),
+    orderBy("createdAt", "desc"),
+    startAfter(afterCreatedAt),
+    limit(pageSize + 1)
+  );
+  const snap = await getDocs(q);
+  const docs = snap.docs;
+  const hasMore = docs.length > pageSize;
+  const page = docs.slice(0, pageSize);
+  const mails = postFilter(
+    page.map((d) => ({ id: d.id, ...d.data() } as Mail)),
+    opts
+  );
+  return { mails, hasMore };
+}
+
+// IMAP 폴더 사이드바용 — deliveredTo 전체에서 폴더 set 추출. 세션당 한 번만 호출.
+export async function fetchFolderSummary(email: string): Promise<string[]> {
+  const q = query(mailsCollection(email), where("deliveredTo", "==", email));
+  const snap = await getDocs(q);
+  const folders = new Set<string>();
+  for (const d of snap.docs) {
+    const f = d.data().folder;
+    if (f && f !== "INBOX") folders.add(f);
+  }
+  return [...folders].sort();
 }
 
 export function subscribeInboxUnread(

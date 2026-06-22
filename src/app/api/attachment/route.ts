@@ -58,9 +58,11 @@ export async function GET(req: NextRequest) {
   }
 
   const contentType = r2Res.headers.get("content-type") ?? "application/octet-stream";
+  const filename = key.split("/").pop() ?? "attachment";
   return new NextResponse(r2Res.body, {
     headers: {
       "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, max-age=3600",
     },
   });

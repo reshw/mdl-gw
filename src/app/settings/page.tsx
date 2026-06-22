@@ -6,10 +6,15 @@ import { useAuth } from "@/lib/auth-context";
 import { getSignature, saveSignature } from "@/lib/settings";
 import { getIdToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
+import {
+  subscribeRules, createRule, updateRule, deleteRule, applyRulesToAllMails,
+  type MailRule, type RuleCondition, type RuleAction, type ConditionField, type ConditionOperator, type ActionType,
+} from "@/lib/rules";
+import { subscribeLabels, type Label } from "@/lib/labels";
 
-type Tab = "signature" | "password" | "notifications" | "account" | "connection";
+type Tab = "signature" | "password" | "notifications" | "account" | "connection" | "rules";
 const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
 
 export default function SettingsPage() {
@@ -34,6 +39,14 @@ export default function SettingsPage() {
   // 알림
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [notifSaving, setNotifSaving] = useState(false);
+
+  // 분류 규칙
+  const [rules, setRules] = useState<MailRule[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
+  const [ruleModal, setRuleModal] = useState<{ mode: "create" | "edit"; rule: Omit<MailRule, "id" | "userEmail" | "createdAt" | "order"> & { id?: string } } | null>(null);
+  const [ruleBackfill, setRuleBackfill] = useState(false);
+  const [ruleSaving, setRuleSaving] = useState(false);
+  const [ruleMsg, setRuleMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // 연결 설정 (SMTP 모드)
   const [conn, setConn] = useState({
@@ -113,6 +126,13 @@ export default function SettingsPage() {
     if (!user) return;
     getSignature().then(setSignature);
   }, [user]);
+
+  useEffect(() => {
+    if (!mailEmail) return;
+    const u1 = subscribeRules(mailEmail, setRules);
+    const u2 = subscribeLabels(mailEmail, setLabels);
+    return () => { u1(); u2(); };
+  }, [mailEmail]);
 
   if (loading || !user) return null;
 
@@ -267,7 +287,7 @@ export default function SettingsPage() {
     <div className="h-screen flex bg-zinc-50 overflow-hidden">
       {/* 사이드바 */}
       <aside className="w-52 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1">
-        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</div>
+        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_APP_NAME ?? `${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일`}</div>
         <button
           onClick={() => router.push("/mail")}
           className="text-left text-sm px-3 py-2 rounded-lg text-zinc-600 hover:bg-zinc-50"
@@ -298,6 +318,12 @@ export default function SettingsPage() {
           className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "account" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
         >
           계정
+        </button>
+        <button
+          onClick={() => setTab("rules")}
+          className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "rules" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+        >
+          분류 규칙
         </button>
         {USE_SMTP && (
           <button
@@ -502,6 +528,290 @@ export default function SettingsPage() {
                 </div>
               )}
             </section>
+          </>
+        )}
+
+        {tab === "rules" && (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h1 className="text-lg font-semibold text-zinc-900">분류 규칙</h1>
+              <button
+                onClick={() => setRuleModal({
+                  mode: "create",
+                  rule: { name: "", enabled: true, conditionLogic: "AND", conditions: [{ field: "from", operator: "contains", value: "" }], actions: [{ type: "addLabel" }] },
+                })}
+                className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              >
+                <Plus size={14} /> 규칙 추가
+              </button>
+            </div>
+
+            {rules.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-zinc-200 p-8 max-w-2xl text-center text-sm text-zinc-400">
+                아직 분류 규칙이 없어요. 규칙을 추가하면 새 메일에 자동 적용됩니다.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 max-w-2xl">
+                {rules.map((rule) => (
+                  <div key={rule.id} className="bg-white rounded-2xl border border-zinc-200 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => updateRule(rule.id, { enabled: !rule.enabled })}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${rule.enabled ? "bg-zinc-900" : "bg-zinc-200"}`}
+                        >
+                          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${rule.enabled ? "translate-x-4.5" : "translate-x-0.5"}`} />
+                        </button>
+                        <span className="text-sm font-medium text-zinc-900">{rule.name || "(이름 없음)"}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setRuleModal({ mode: "edit", rule: { ...rule } })}
+                          className="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1 rounded hover:bg-zinc-50"
+                        >
+                          편집
+                        </button>
+                        <button
+                          onClick={() => deleteRule(rule.id)}
+                          className="text-zinc-300 hover:text-red-400 p-1 rounded hover:bg-zinc-50"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-zinc-400 flex flex-wrap gap-1">
+                      {rule.conditions.map((c, i) => (
+                        <span key={i} className="bg-zinc-50 border border-zinc-200 rounded px-2 py-0.5">
+                          {c.field} {c.operator} "{c.value}"
+                        </span>
+                      ))}
+                      <span className="text-zinc-300">→</span>
+                      {rule.actions.map((a, i) => (
+                        <span key={i} className="bg-blue-50 border border-blue-200 text-blue-700 rounded px-2 py-0.5">
+                          {a.type === "addLabel" ? `라벨: ${labels.find(l => l.id === a.labelId)?.name ?? a.labelId}` : a.type === "markRead" ? "읽음 처리" : "휴지통"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 규칙 추가/편집 모달 */}
+            {ruleModal && (
+              <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+                  <h2 className="text-base font-semibold text-zinc-900 mb-4">
+                    {ruleModal.mode === "create" ? "규칙 추가" : "규칙 편집"}
+                  </h2>
+
+                  {/* 규칙 이름 */}
+                  <div className="mb-4">
+                    <label className="text-xs text-zinc-500 mb-1 block">규칙 이름</label>
+                    <input
+                      type="text"
+                      placeholder="예: 뉴스레터 자동 분류"
+                      value={ruleModal.rule.name}
+                      onChange={(e) => setRuleModal(m => m ? { ...m, rule: { ...m.rule, name: e.target.value } } : m)}
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-black outline-none focus:border-zinc-400"
+                    />
+                  </div>
+
+                  {/* 조건 */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs text-zinc-500">조건</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-400">조건 결합:</span>
+                        <select
+                          value={ruleModal.rule.conditionLogic}
+                          onChange={(e) => setRuleModal(m => m ? { ...m, rule: { ...m.rule, conditionLogic: e.target.value as "AND" | "OR" } } : m)}
+                          className="text-xs rounded border border-zinc-200 px-2 py-1 text-zinc-700 outline-none"
+                        >
+                          <option value="AND">모두 충족 (AND)</option>
+                          <option value="OR">하나라도 충족 (OR)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {ruleModal.rule.conditions.map((cond, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <select
+                            value={cond.field}
+                            onChange={(e) => setRuleModal(m => {
+                              if (!m) return m;
+                              const conditions = [...m.rule.conditions];
+                              conditions[i] = { ...conditions[i], field: e.target.value as ConditionField };
+                              return { ...m, rule: { ...m.rule, conditions } };
+                            })}
+                            className="rounded-lg border border-zinc-200 px-2 py-1.5 text-sm text-black outline-none focus:border-zinc-400"
+                          >
+                            <option value="from">보낸 사람</option>
+                            <option value="to">받는 사람</option>
+                            <option value="subject">제목</option>
+                            <option value="text">본문</option>
+                          </select>
+                          <select
+                            value={cond.operator}
+                            onChange={(e) => setRuleModal(m => {
+                              if (!m) return m;
+                              const conditions = [...m.rule.conditions];
+                              conditions[i] = { ...conditions[i], operator: e.target.value as ConditionOperator };
+                              return { ...m, rule: { ...m.rule, conditions } };
+                            })}
+                            className="rounded-lg border border-zinc-200 px-2 py-1.5 text-sm text-black outline-none focus:border-zinc-400"
+                          >
+                            <option value="contains">포함</option>
+                            <option value="equals">일치</option>
+                            <option value="startsWith">시작</option>
+                            <option value="endsWith">끝</option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="값"
+                            value={cond.value}
+                            onChange={(e) => setRuleModal(m => {
+                              if (!m) return m;
+                              const conditions = [...m.rule.conditions];
+                              conditions[i] = { ...conditions[i], value: e.target.value };
+                              return { ...m, rule: { ...m.rule, conditions } };
+                            })}
+                            className="flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-black outline-none focus:border-zinc-400"
+                          />
+                          {ruleModal.rule.conditions.length > 1 && (
+                            <button
+                              onClick={() => setRuleModal(m => {
+                                if (!m) return m;
+                                return { ...m, rule: { ...m.rule, conditions: m.rule.conditions.filter((_, ci) => ci !== i) } };
+                              })}
+                              className="text-zinc-300 hover:text-red-400"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setRuleModal(m => m ? { ...m, rule: { ...m.rule, conditions: [...m.rule.conditions, { field: "from", operator: "contains", value: "" }] } } : m)}
+                      className="mt-2 text-xs text-zinc-400 hover:text-zinc-700 flex items-center gap-1"
+                    >
+                      <Plus size={12} /> 조건 추가
+                    </button>
+                  </div>
+
+                  {/* 액션 */}
+                  <div className="mb-5">
+                    <label className="text-xs text-zinc-500 mb-2 block">실행할 작업</label>
+                    <div className="flex flex-col gap-2">
+                      {ruleModal.rule.actions.map((action, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <select
+                            value={action.type}
+                            onChange={(e) => setRuleModal(m => {
+                              if (!m) return m;
+                              const actions = [...m.rule.actions];
+                              actions[i] = { type: e.target.value as ActionType };
+                              return { ...m, rule: { ...m.rule, actions } };
+                            })}
+                            className="rounded-lg border border-zinc-200 px-2 py-1.5 text-sm text-black outline-none focus:border-zinc-400"
+                          >
+                            <option value="addLabel">라벨 추가</option>
+                            <option value="markRead">읽음 처리</option>
+                            <option value="moveToTrash">휴지통으로</option>
+                          </select>
+                          {action.type === "addLabel" && (
+                            <select
+                              value={action.labelId ?? ""}
+                              onChange={(e) => setRuleModal(m => {
+                                if (!m) return m;
+                                const actions = [...m.rule.actions];
+                                actions[i] = { ...actions[i], labelId: e.target.value };
+                                return { ...m, rule: { ...m.rule, actions } };
+                              })}
+                              className="flex-1 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm text-black outline-none focus:border-zinc-400"
+                            >
+                              <option value="">라벨 선택</option>
+                              {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                            </select>
+                          )}
+                          {ruleModal.rule.actions.length > 1 && (
+                            <button
+                              onClick={() => setRuleModal(m => m ? { ...m, rule: { ...m.rule, actions: m.rule.actions.filter((_, ai) => ai !== i) } } : m)}
+                              className="text-zinc-300 hover:text-red-400"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setRuleModal(m => m ? { ...m, rule: { ...m.rule, actions: [...m.rule.actions, { type: "addLabel" }] } } : m)}
+                      className="mt-2 text-xs text-zinc-400 hover:text-zinc-700 flex items-center gap-1"
+                    >
+                      <Plus size={12} /> 작업 추가
+                    </button>
+                  </div>
+
+                  {/* 소급 적용 */}
+                  <label className="flex items-center gap-2 mb-5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ruleBackfill}
+                      onChange={(e) => setRuleBackfill(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm text-zinc-600">기존 메일에도 적용</span>
+                  </label>
+
+                  {ruleMsg && (
+                    <p className={`text-xs mb-3 ${ruleMsg.ok ? "text-zinc-400" : "text-red-500"}`}>{ruleMsg.text}</p>
+                  )}
+
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => { setRuleModal(null); setRuleMsg(null); setRuleBackfill(false); }}
+                      className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 rounded-lg hover:bg-zinc-50"
+                    >
+                      취소
+                    </button>
+                    <button
+                      disabled={ruleSaving}
+                      onClick={async () => {
+                        if (!mailEmail) return;
+                        setRuleSaving(true);
+                        setRuleMsg(null);
+                        try {
+                          let ruleId: string;
+                          if (ruleModal.mode === "create") {
+                            ruleId = await createRule(mailEmail, ruleModal.rule);
+                          } else {
+                            ruleId = ruleModal.rule.id!;
+                            await updateRule(ruleId, ruleModal.rule);
+                          }
+                          if (ruleBackfill) {
+                            const savedRule = { ...ruleModal.rule, id: ruleId, userEmail: mailEmail, createdAt: "", order: 0 } as MailRule;
+                            const count = await applyRulesToAllMails(mailEmail, [savedRule]);
+                            setRuleMsg({ text: `저장 완료. 기존 메일 ${count}건에 적용했습니다.`, ok: true });
+                          } else {
+                            setRuleMsg({ text: "저장되었습니다.", ok: true });
+                          }
+                          setTimeout(() => { setRuleModal(null); setRuleMsg(null); setRuleBackfill(false); }, 1200);
+                        } catch (e) {
+                          setRuleMsg({ text: "저장 실패: " + String(e), ok: false });
+                        } finally {
+                          setRuleSaving(false);
+                        }
+                      }}
+                      className="rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      {ruleSaving ? "저장 중..." : "저장"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 

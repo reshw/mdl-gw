@@ -8,15 +8,17 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
-  subscribeMails, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
+  subscribeMailsFirstPage, loadMoreMails, fetchFolderSummary,
+  markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
   subscribeTrash, moveToTrash, restoreFromTrash, permanentDelete,
   subscribeInboxUnread, getTrackingStatus,
-  type Mail, type Draft, type TrackingStatus,
+  type Mail, type Draft, type TrackingStatus, type MailListOpts,
 } from "@/lib/mail";
 import {
   subscribeLabels, createLabel, updateLabel, deleteLabel, addLabelToMail, removeLabelFromMail,
   LABEL_COLORS, resolveLabelColor, type Label,
 } from "@/lib/labels";
+import { subscribeRules, applyRulesToMail, type MailRule } from "@/lib/rules";
 import ComposeModal from "@/components/ComposeModal";
 import { addPersonalContact } from "@/lib/contacts";
 
@@ -26,6 +28,11 @@ export default function MailPage() {
   const { user, loading, mailEmail, isAdmin, dbReady } = useAuth();
   const router = useRouter();
   const [mails, setMails] = useState<Mail[]>([]);
+  const [mailsHasMore, setMailsHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const olderMailsRef = useRef<Mail[]>([]);
+  const hasOlderRef = useRef(false);
+  const [imapFolderList, setImapFolderList] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [trashMails, setTrashMails] = useState<Mail[]>([]);
   const [selected, setSelected] = useState<Mail | null>(null);
@@ -44,6 +51,9 @@ export default function MailPage() {
 
   // 라벨 상태
   const [labels, setLabels] = useState<Label[]>([]);
+
+  // 분류 규칙 상태
+  const [rules, setRules] = useState<MailRule[]>([]);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
   const [activeImapFolder, setActiveImapFolder] = useState<string | null>(null);
   const [showLabelCreate, setShowLabelCreate] = useState(false);
@@ -106,10 +116,57 @@ export default function MailPage() {
     setSearchQuery("");
     setCheckedIds(new Set());
     setShowLabelDropdown(false);
-    if (folder === "draft" || folder === "trash") return;
-    const unsub = subscribeMails(mailEmail, setMails, folder);
+    olderMailsRef.current = [];
+    hasOlderRef.current = false;
+    if (folder === "draft" || folder === "trash") {
+      setMails([]);
+      setMailsHasMore(false);
+      return;
+    }
+    const opts: MailListOpts = {
+      folder: folder as "inbox" | "sent",
+      imapFolder: activeImapFolder,
+      labelId: activeLabel,
+    };
+    const unsub = subscribeMailsFirstPage(mailEmail, (firstPage, snapshotHasMore) => {
+      const seen = new Set(firstPage.map((m) => m.id));
+      const older = olderMailsRef.current.filter((m) => !seen.has(m.id));
+      setMails([...firstPage, ...older]);
+      if (!hasOlderRef.current) setMailsHasMore(snapshotHasMore);
+    }, opts);
     return () => unsub();
-  }, [user, folder, dbReady]);
+  }, [user, folder, dbReady, activeImapFolder, activeLabel]);
+
+  // IMAP 폴더 사이드바 — 세션당 한 번만 fetch
+  useEffect(() => {
+    if (!mailEmail || !dbReady) return;
+    fetchFolderSummary(mailEmail)
+      .then(setImapFolderList)
+      .catch((e) => console.error("Failed to fetch folder summary:", e));
+  }, [mailEmail, dbReady]);
+
+  async function handleLoadMore() {
+    if (loadingMore || !mailsHasMore) return;
+    const last = mails[mails.length - 1];
+    if (!last) return;
+    setLoadingMore(true);
+    try {
+      const opts: MailListOpts = {
+        folder: folder as "inbox" | "sent",
+        imapFolder: activeImapFolder,
+        labelId: activeLabel,
+      };
+      const result = await loadMoreMails(mailEmail!, opts, last.createdAt);
+      olderMailsRef.current = [...olderMailsRef.current, ...result.mails];
+      hasOlderRef.current = true;
+      setMails((prev) => [...prev, ...result.mails]);
+      setMailsHasMore(result.hasMore);
+    } catch (e) {
+      console.error("Failed to load more mails:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     if (!mailEmail || !dbReady) return;
@@ -134,6 +191,24 @@ export default function MailPage() {
     const unsub = subscribeLabels(mailEmail, setLabels);
     return () => unsub();
   }, [user, dbReady]);
+
+  useEffect(() => {
+    if (!mailEmail || !dbReady) return;
+    const unsub = subscribeRules(mailEmail, setRules);
+    return () => unsub();
+  }, [user, dbReady]);
+
+  // 새 메일에 규칙 자동 적용 (rulesApplied 없는 수신 메일만)
+  useEffect(() => {
+    if (!mailEmail || rules.length === 0) return;
+    const pending = mails.filter(
+      (m) => !(m as Mail & { rulesApplied?: boolean }).rulesApplied && m.type !== "sent"
+    );
+    if (pending.length === 0) return;
+    for (const mail of pending) {
+      applyRulesToMail(mail, rules, mailEmail).catch(console.error);
+    }
+  }, [mails, rules, mailEmail]);
 
   useEffect(() => {
     setTrackingStatus(null);
@@ -406,14 +481,8 @@ export default function MailPage() {
       )
     : currentMails;
 
-  // 라벨 + IMAP 폴더 + 안읽은 필터 적용
-  const labelFiltered = activeLabel
-    ? filteredMails.filter((m) => m.labels?.includes(activeLabel))
-    : filteredMails;
-  const imapFolderFiltered = activeImapFolder
-    ? labelFiltered.filter((m) => m.folder === activeImapFolder)
-    : labelFiltered;
-  const unreadFiltered = unreadOnly ? imapFolderFiltered.filter((m) => !m.read) : imapFolderFiltered;
+  // 라벨/IMAP 폴더는 서버 사이드 필터(쿼리 시점). unread/noLabel만 클라 사이드.
+  const unreadFiltered = unreadOnly ? filteredMails.filter((m) => !m.read) : filteredMails;
   const displayedMails = noLabelOnly
     ? unreadFiltered.filter((m) => !m.labels?.length)
     : unreadFiltered;
@@ -425,7 +494,7 @@ export default function MailPage() {
       )
     : drafts;
 
-  const imapFolders = [...new Set(mails.map((m) => m.folder).filter((f): f is string => !!f && f !== "INBOX"))].sort();
+  const imapFolders = imapFolderList;
 
   // 현재 헤더 타이틀
   const activeLabelObj = activeLabel ? labels.find((l) => l.id === activeLabel) : null;
@@ -453,7 +522,7 @@ export default function MailPage() {
 
       {/* 사이드바 */}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-zinc-200 flex flex-col p-4 gap-1 overflow-y-auto transition-transform duration-200 lg:static lg:translate-x-0 lg:w-52 ${showMobileSidebar ? "translate-x-0" : "-translate-x-full"}`}>
-        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일</div>
+        <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_APP_NAME ?? `${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일`}</div>
 
         {/* 폴더 목록 */}
         {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (
@@ -764,7 +833,8 @@ export default function MailPage() {
               {q ? "검색 결과가 없습니다." : activeLabel ? "이 라벨의 메일이 없습니다." : { inbox: "받은 메일이 없습니다.", sent: "보낸 메일이 없습니다.", trash: "휴지통이 비어있습니다.", draft: "" }[folder]}
             </div>
           ) : (
-            displayedMails.map((mail) => {
+            <>
+            {displayedMails.map((mail) => {
               const mailLabelDots = (mail.labels ?? [])
                 .map((lid) => labels.find((l) => l.id === lid))
                 .filter(Boolean) as Label[];
@@ -825,7 +895,19 @@ export default function MailPage() {
                   </button>
                 </div>
               );
-            })
+            })}
+            {mailsHasMore && (
+              <div className="p-3 flex justify-center">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="text-xs px-3 py-1.5 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  {loadingMore ? "로딩 중..." : "더 보기"}
+                </button>
+              </div>
+            )}
+            </>
           )}
         </div>
       </div>
@@ -1092,7 +1174,14 @@ export default function MailPage() {
                     : att.r2Key
                       ? `/api/attachment?key=${encodeURIComponent(att.r2Key)}`
                       : undefined;
-                  if (!href) return null;
+                  if (!href) return (
+                    <span
+                      key={i}
+                      className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs text-zinc-400"
+                    >
+                      {att.name}
+                    </span>
+                  );
                   return (
                     <a
                       key={i}
