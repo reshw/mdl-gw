@@ -1,7 +1,7 @@
 import { getPersonalDb } from "@/lib/personal-db";
 import {
   collection, query, where, onSnapshot, orderBy,
-  addDoc, deleteDoc, doc, updateDoc, getDocs,
+  addDoc, deleteDoc, doc, updateDoc, getDocs, arrayUnion,
   type Unsubscribe,
 } from "firebase/firestore";
 import { addLabelToMail } from "@/lib/labels";
@@ -69,9 +69,17 @@ export async function deleteRule(ruleId: string): Promise<void> {
   await deleteDoc(doc(getPersonalDb(), "rules", ruleId));
 }
 
+function extractEmail(value: string): string {
+  const m = value.match(/<([^>]+)>/);
+  return (m ? m[1] : value).trim().toLowerCase();
+}
+
 function matchCondition(mail: Mail, cond: RuleCondition): boolean {
   const raw = (mail[cond.field as keyof Mail] as string | undefined) ?? "";
-  const haystack = raw.toLowerCase();
+  // from/to 필드는 "이름 <email>" 형태일 수 있으므로 이메일 주소와 원본 둘 다 검사
+  const haystack = (cond.field === "from" || cond.field === "to")
+    ? `${raw} ${extractEmail(raw)}`.toLowerCase()
+    : raw.toLowerCase();
   const needle = cond.value.toLowerCase();
   switch (cond.operator) {
     case "contains":    return haystack.includes(needle);
@@ -87,9 +95,14 @@ function matchesRule(mail: Mail, rule: MailRule): boolean {
   return rule.conditions.some((c) => matchCondition(mail, c));
 }
 
-export async function applyRulesToMail(mail: Mail, rules: MailRule[], userEmail: string): Promise<void> {
-  for (const rule of rules) {
-    if (!matchesRule(mail, rule)) continue;
+type MailWithApplied = Mail & { appliedRules?: string[] };
+
+export async function applyRulesToMail(mail: MailWithApplied, rules: MailRule[], userEmail: string): Promise<void> {
+  const appliedRules = mail.appliedRules ?? [];
+  const toApply = rules.filter((r) => !appliedRules.includes(r.id) && matchesRule(mail, r));
+  if (toApply.length === 0) return;
+
+  for (const rule of toApply) {
     for (const action of rule.actions) {
       if (action.type === "addLabel" && action.labelId) {
         await addLabelToMail(mail.id, action.labelId);
@@ -100,19 +113,24 @@ export async function applyRulesToMail(mail: Mail, rules: MailRule[], userEmail:
       }
     }
   }
-  // 적용 완료 표시
-  await updateDoc(doc(getPersonalDb(), "mails", mail.id), { rulesApplied: true });
+
+  await updateDoc(doc(getPersonalDb(), "mails", mail.id), {
+    appliedRules: arrayUnion(...toApply.map((r) => r.id)),
+  });
 }
 
-// 소급 적용: 기존 메일 전체에 규칙 실행
+// 소급 적용: 미적용 규칙이 있는 메일에만 실행
 export async function applyRulesToAllMails(userEmail: string, rules: MailRule[]): Promise<number> {
   const snap = await getDocs(
     query(collection(getPersonalDb(), "mails"), where("deliveredTo", "==", userEmail))
   );
+  const ruleIds = new Set(rules.map((r) => r.id));
   let count = 0;
   for (const d of snap.docs) {
-    const mail = { id: d.id, ...d.data() } as Mail & { rulesApplied?: boolean };
-    if (mail.rulesApplied) continue;
+    const mail = { id: d.id, ...d.data() } as MailWithApplied;
+    if (mail.type === "sent") continue;
+    const hasUnapplied = rules.some((r) => !(mail.appliedRules ?? []).includes(r.id));
+    if (!hasUnapplied) continue;
     await applyRulesToMail(mail, rules, userEmail);
     count++;
   }

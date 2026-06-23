@@ -246,6 +246,7 @@ export async function POST(req: NextRequest) {
             read: false,
             attachments: attachmentMeta,
             createdAt: sentAt,
+            deliveredTo: recipient,
           });
           notify(recipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
         } else {
@@ -295,6 +296,7 @@ export async function POST(req: NextRequest) {
           read: false,
           attachments: attachmentMeta,
           createdAt: sentAt,
+          deliveredTo: ccRecipient,
         });
         notify(ccRecipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
       }

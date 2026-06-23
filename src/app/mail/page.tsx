@@ -38,7 +38,7 @@ export default function MailPage() {
   const [selected, setSelected] = useState<Mail | null>(null);
   const [composing, setComposing] = useState(false);
   const [editingDraft, setEditingDraft] = useState<Draft | undefined>(undefined);
-  const [composeInit, setComposeInit] = useState<{ to?: string[]; cc?: string[]; subject?: string; html?: string } | undefined>(undefined);
+  const [composeInit, setComposeInit] = useState<{ to?: string[]; cc?: string[]; subject?: string; html?: string; forwardAttachments?: { name: string; r2Key?: string; contentType?: string; size?: number }[] } | undefined>(undefined);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [folder, setFolder] = useState<Folder>("inbox");
   const [quickAdd, setQuickAdd] = useState<{ email: string; name: string; company: string } | null>(null);
@@ -198,12 +198,15 @@ export default function MailPage() {
     return () => unsub();
   }, [user, dbReady]);
 
-  // 새 메일에 규칙 자동 적용 (rulesApplied 없는 수신 메일만)
+  // 새 메일에 규칙 자동 적용 (appliedRules에 없는 규칙이 있는 메일만)
   useEffect(() => {
     if (!mailEmail || rules.length === 0) return;
-    const pending = mails.filter(
-      (m) => !(m as Mail & { rulesApplied?: boolean }).rulesApplied && m.type !== "sent"
-    );
+    const ruleIds = rules.map((r) => r.id);
+    const pending = mails.filter((m) => {
+      if (m.type === "sent") return false;
+      const applied = (m as Mail & { appliedRules?: string[] }).appliedRules ?? [];
+      return ruleIds.some((id) => !applied.includes(id));
+    });
     if (pending.length === 0) return;
     for (const mail of pending) {
       applyRulesToMail(mail, rules, mailEmail).catch(console.error);
@@ -277,7 +280,7 @@ export default function MailPage() {
   }
 
   async function handleBulkMarkRead() {
-    const targets = displayedMails.filter((m) => checkedIds.has(m.id) && !m.read);
+    const targets = mails.filter((m) => checkedIds.has(m.id) && !m.read);
     await Promise.all(targets.map((m) => markAsRead(m, mailEmail!)));
     setCheckedIds(new Set());
   }
@@ -317,7 +320,12 @@ export default function MailPage() {
   }
 
   function handleForward(mail: Mail) {
-    setComposeInit({ to: [], subject: `Fwd: ${mail.subject}`, html: quoteHtml(mail) });
+    setComposeInit({
+      to: [],
+      subject: `Fwd: ${mail.subject}`,
+      html: quoteHtml(mail),
+      ...(mail.attachments?.length ? { forwardAttachments: mail.attachments } : {}),
+    });
     setEditingDraft(undefined);
     setComposing(true);
   }
@@ -744,8 +752,8 @@ export default function MailPage() {
                   const hasRead = displayedMails.some((m) => checkedIds.has(m.id) && m.read);
                   return (
                     <>
-                      {hasUnread && <button onClick={handleBulkMarkRead} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">읽음</button>}
-                      {hasRead && <button onClick={handleBulkMarkUnread} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">안읽음</button>}
+                      {hasUnread && <button onClick={handleBulkMarkRead} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">읽음 처리</button>}
+                      {hasRead && <button onClick={handleBulkMarkUnread} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">읽지 않음</button>}
                     </>
                   );
                 })()}

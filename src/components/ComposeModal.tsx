@@ -14,6 +14,7 @@ interface ComposeInit {
   cc?: string[];
   subject?: string;
   html?: string;
+  forwardAttachments?: { name: string; r2Key?: string; contentType?: string; size?: number }[];
 }
 
 interface Props {
@@ -35,6 +36,8 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
   const [subject, setSubject] = useState(draft?.subject ?? init?.subject ?? "");
   const [html, setHtml] = useState(draft?.html ?? init?.html ?? "");
   const [files, setFiles] = useState<File[]>([]);
+  const [fetchingAttachments, setFetchingAttachments] = useState(false);
+  const [missingAttachmentNames, setMissingAttachmentNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -70,6 +73,32 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
       const initHtml = init?.html ?? "";
       setHtml(initHtml ? `<br>${sig}${initHtml}` : sig);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const fwd = init?.forwardAttachments;
+    if (!fwd?.length) return;
+    const fetchable = fwd.filter((a) => a.r2Key);
+    const missing = fwd.filter((a) => !a.r2Key).map((a) => a.name);
+    setMissingAttachmentNames(missing);
+    if (!fetchable.length) return;
+    setFetchingAttachments(true);
+    Promise.all(
+      fetchable.map(async (att) => {
+        try {
+          const res = await fetch(`/api/attachment?key=${encodeURIComponent(att.r2Key!)}`);
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          return new File([blob], att.name, { type: att.contentType ?? blob.type });
+        } catch {
+          return null;
+        }
+      })
+    ).then((results) => {
+      const fetched = results.filter((f): f is File => f !== null);
+      if (fetched.length) setFiles((prev) => [...prev, ...fetched]);
+    }).finally(() => setFetchingAttachments(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -219,12 +248,20 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
               onChange={(e) => setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])}
             />
           </label>
-          {files.length > 0 && (
+          {(fetchingAttachments || files.length > 0 || missingAttachmentNames.length > 0) && (
             <div className="flex flex-wrap gap-1 mt-1">
+              {fetchingAttachments && (
+                <span className="text-xs text-zinc-400 px-2 py-0.5">첨부파일 가져오는 중...</span>
+              )}
               {files.map((f, i) => (
                 <span key={i} className="flex items-center gap-1 text-xs text-zinc-900 bg-zinc-100 rounded px-2 py-0.5">
                   {f.name}
                   <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="text-zinc-400 hover:text-zinc-600">✕</button>
+                </span>
+              ))}
+              {missingAttachmentNames.map((name, i) => (
+                <span key={i} className="flex items-center gap-1 text-xs text-zinc-400 bg-zinc-50 border border-zinc-200 rounded px-2 py-0.5" title="원본 첨부파일을 찾을 수 없어 직접 첨부해주세요">
+                  {name} (재첨부 필요)
                 </span>
               ))}
             </div>
