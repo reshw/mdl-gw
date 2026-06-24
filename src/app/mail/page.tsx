@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import JSZip from "jszip";
 import { Funnel, Mail as MailIcon, MailOpen, Square, CheckSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -403,6 +404,57 @@ export default function MailPage() {
     else setCheckedIds(new Set(displayedMails.map((m) => m.id)));
   }
 
+  async function handleBulkDownload() {
+    const targets = currentMails.filter((m) => checkedIds.has(m.id));
+    if (!targets.length) return;
+
+    function encodeHeader(str: string): string {
+      if (/^[\x00-\x7F]*$/.test(str)) return str;
+      return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(str)))}?=`;
+    }
+    function buildEml(mail: Mail): string {
+      const date = new Date(mail.date || mail.createdAt).toUTCString();
+      const lines = [
+        `From: ${mail.from}`,
+        `To: ${mail.to}`,
+        ...(mail.cc ? [`Cc: ${mail.cc}`] : []),
+        `Subject: ${encodeHeader(mail.subject)}`,
+        `Date: ${date}`,
+        `MIME-Version: 1.0`,
+        mail.html ? `Content-Type: text/html; charset=utf-8` : `Content-Type: text/plain; charset=utf-8`,
+        `Content-Transfer-Encoding: 8bit`,
+      ];
+      return lines.join("\r\n") + "\r\n\r\n" + (mail.html ?? mail.text ?? "");
+    }
+
+    const zip = new JSZip();
+    const usedNames = new Map<string, number>();
+    for (const mail of targets) {
+      const base = (mail.subject || "이메일").replace(/[/\\?%*:|"<>]/g, "_");
+      const count = usedNames.get(base) ?? 0;
+      usedNames.set(base, count + 1);
+      const filename = count === 0 ? `${base}.eml` : `${base} (${count}).eml`;
+      zip.file(filename, buildEml(mail));
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `메일_${targets.length}건_${today}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    const hasAtt = targets.some((m) => m.attachments?.length);
+    const msg = hasAtt
+      ? `${targets.length}건 저장됐습니다. 첨부파일은 별도로 저장해주세요.`
+      : `${targets.length}건 저장됐습니다.`;
+    if (downloadToastTimer.current) clearTimeout(downloadToastTimer.current);
+    setDownloadToast(msg);
+    downloadToastTimer.current = setTimeout(() => setDownloadToast(null), 4000);
+  }
+
   async function handleBulkTrash() {
     await Promise.all([...checkedIds].map((id) => moveToTrash(id, mailEmail!)));
     if (selected && checkedIds.has(selected.id)) setSelected(null);
@@ -787,6 +839,7 @@ export default function MailPage() {
             {folder === "trash" ? (
               <>
                 <button onClick={handleBulkRestore} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">복원</button>
+                <button onClick={handleBulkDownload} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">다운로드</button>
                 <button onClick={handleBulkPermanentDelete} className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50">영구삭제</button>
               </>
             ) : folder === "draft" ? (
@@ -803,6 +856,7 @@ export default function MailPage() {
                     </>
                   );
                 })()}
+                <button onClick={handleBulkDownload} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">다운로드</button>
                 <button onClick={handleBulkTrash} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">삭제</button>
                 <button onClick={handleBulkCompose} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">단체발송</button>
               </>
