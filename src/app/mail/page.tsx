@@ -77,6 +77,10 @@ export default function MailPage() {
   const [daemonError, setDaemonError] = useState<string | null>(null);
   const [daemonLastSuccess, setDaemonLastSuccess] = useState<string | null>(null);
 
+  // 다운로드 토스트
+  const [downloadToast, setDownloadToast] = useState<string | null>(null);
+  const downloadToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 모바일 상태
   const [mobilePane, setMobilePane] = useState<"list" | "viewer">("list");
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -330,6 +334,40 @@ export default function MailPage() {
     setComposing(true);
   }
 
+  function downloadAsEml(mail: Mail) {
+    function encodeHeader(str: string): string {
+      if (/^[\x00-\x7F]*$/.test(str)) return str;
+      return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(str)))}?=`;
+    }
+    const date = new Date(mail.date || mail.createdAt).toUTCString();
+    const lines = [
+      `From: ${mail.from}`,
+      `To: ${mail.to}`,
+      ...(mail.cc ? [`Cc: ${mail.cc}`] : []),
+      `Subject: ${encodeHeader(mail.subject)}`,
+      `Date: ${date}`,
+      `MIME-Version: 1.0`,
+      mail.html ? `Content-Type: text/html; charset=utf-8` : `Content-Type: text/plain; charset=utf-8`,
+      `Content-Transfer-Encoding: 8bit`,
+    ];
+    const body = mail.html ?? mail.text ?? "";
+    const eml = lines.join("\r\n") + "\r\n\r\n" + body;
+    const blob = new Blob([eml], { type: "message/rfc822" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(mail.subject || "이메일").replace(/[/\\?%*:|"<>]/g, "_")}.eml`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    const msg = mail.attachments?.length
+      ? `저장됐습니다. 첨부파일(${mail.attachments.length}개)은 별도로 저장해주세요.`
+      : "저장됐습니다.";
+    if (downloadToastTimer.current) clearTimeout(downloadToastTimer.current);
+    setDownloadToast(msg);
+    downloadToastTimer.current = setTimeout(() => setDownloadToast(null), 4000);
+  }
+
   function quoteHtml(mail: Mail): string {
     const date = new Date(mail.createdAt).toLocaleString("ko-KR");
     const body = mail.html || `<pre>${mail.text ?? ""}</pre>`;
@@ -520,6 +558,14 @@ export default function MailPage() {
             )}
           </div>
           <button onClick={() => setDaemonError(null)} className="text-red-400 hover:text-red-600 shrink-0">✕</button>
+        </div>
+      )}
+
+      {/* 다운로드 토스트 */}
+      {downloadToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-zinc-900 text-white text-sm px-4 py-3 rounded-xl shadow-lg max-w-sm w-full">
+          <span className="flex-1">{downloadToast}</span>
+          <button onClick={() => setDownloadToast(null)} className="text-zinc-400 hover:text-white shrink-0">✕</button>
         </div>
       )}
 
@@ -976,6 +1022,7 @@ export default function MailPage() {
                       <button onClick={() => handleReplyAll(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전체답장</button>
                     )}
                     <button onClick={() => handleForward(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전달</button>
+                    <button onClick={() => downloadAsEml(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">다운로드</button>
 
                     {/* 라벨 드롭다운 */}
                     <div className="relative" ref={labelDropdownRef}>
