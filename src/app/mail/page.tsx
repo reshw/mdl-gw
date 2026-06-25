@@ -335,12 +335,41 @@ export default function MailPage() {
     setComposing(true);
   }
 
-  function downloadAsEml(mail: Mail) {
+  function buildAttachmentLinks(mail: Mail): string {
+    if (!mail.attachments?.length) return "";
+    const origin = window.location.origin;
+    const items = mail.attachments.map((att) => {
+      const href = att.url
+        ? att.url
+        : att.r2Key
+          ? `${origin}/api/attachment?key=${encodeURIComponent(att.r2Key)}`
+          : null;
+      return href
+        ? `<li><a href="${href}" style="color:#2563eb">${att.name}</a></li>`
+        : `<li style="color:#6b7280">${att.name}</li>`;
+    }).join("");
+    return `<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb"><p style="margin:0 0 8px;font-size:13px;color:#6b7280;font-weight:600">첨부파일</p><ul style="margin:0;padding-left:16px;font-size:13px;color:#374151">${items}</ul>`;
+  }
+
+  function buildAttachmentLinksTxt(mail: Mail): string {
+    if (!mail.attachments?.length) return "";
+    const origin = window.location.origin;
+    const lines = mail.attachments.map((att) => {
+      const href = att.url ?? (att.r2Key ? `${origin}/api/attachment?key=${encodeURIComponent(att.r2Key)}` : null);
+      return href ? `- ${att.name} : ${href}` : `- ${att.name}`;
+    }).join("\n");
+    return `\n\n--- 첨부파일 ---\n${lines}`;
+  }
+
+  function buildEml(mail: Mail): string {
     function encodeHeader(str: string): string {
       if (/^[\x00-\x7F]*$/.test(str)) return str;
       return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(str)))}?=`;
     }
     const date = new Date(mail.date || mail.createdAt).toUTCString();
+    const body = mail.html
+      ? mail.html + buildAttachmentLinks(mail)
+      : (mail.text ?? "") + buildAttachmentLinksTxt(mail);
     const lines = [
       `From: ${mail.from}`,
       `To: ${mail.to}`,
@@ -351,8 +380,11 @@ export default function MailPage() {
       mail.html ? `Content-Type: text/html; charset=utf-8` : `Content-Type: text/plain; charset=utf-8`,
       `Content-Transfer-Encoding: 8bit`,
     ];
-    const body = mail.html ?? mail.text ?? "";
-    const eml = lines.join("\r\n") + "\r\n\r\n" + body;
+    return lines.join("\r\n") + "\r\n\r\n" + body;
+  }
+
+  function downloadAsEml(mail: Mail) {
+    const eml = buildEml(mail);
     const blob = new Blob([eml], { type: "message/rfc822" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -361,11 +393,8 @@ export default function MailPage() {
     a.click();
     URL.revokeObjectURL(url);
 
-    const msg = mail.attachments?.length
-      ? `저장됐습니다. 첨부파일(${mail.attachments.length}개)은 별도로 저장해주세요.`
-      : "저장됐습니다.";
     if (downloadToastTimer.current) clearTimeout(downloadToastTimer.current);
-    setDownloadToast(msg);
+    setDownloadToast("저장됐습니다.");
     downloadToastTimer.current = setTimeout(() => setDownloadToast(null), 4000);
   }
 
@@ -405,27 +434,10 @@ export default function MailPage() {
   }
 
   async function handleBulkDownload() {
-    const targets = currentMails.filter((m) => checkedIds.has(m.id));
+    const MAX = 50;
+    const all = currentMails.filter((m) => checkedIds.has(m.id));
+    const targets = all.slice(0, MAX);
     if (!targets.length) return;
-
-    function encodeHeader(str: string): string {
-      if (/^[\x00-\x7F]*$/.test(str)) return str;
-      return `=?UTF-8?B?${btoa(unescape(encodeURIComponent(str)))}?=`;
-    }
-    function buildEml(mail: Mail): string {
-      const date = new Date(mail.date || mail.createdAt).toUTCString();
-      const lines = [
-        `From: ${mail.from}`,
-        `To: ${mail.to}`,
-        ...(mail.cc ? [`Cc: ${mail.cc}`] : []),
-        `Subject: ${encodeHeader(mail.subject)}`,
-        `Date: ${date}`,
-        `MIME-Version: 1.0`,
-        mail.html ? `Content-Type: text/html; charset=utf-8` : `Content-Type: text/plain; charset=utf-8`,
-        `Content-Transfer-Encoding: 8bit`,
-      ];
-      return lines.join("\r\n") + "\r\n\r\n" + (mail.html ?? mail.text ?? "");
-    }
 
     const zip = new JSZip();
     const usedNames = new Map<string, number>();
@@ -446,9 +458,8 @@ export default function MailPage() {
     a.click();
     URL.revokeObjectURL(url);
 
-    const hasAtt = targets.some((m) => m.attachments?.length);
-    const msg = hasAtt
-      ? `${targets.length}건 저장됐습니다. 첨부파일은 별도로 저장해주세요.`
+    const msg = all.length > MAX
+      ? `상위 ${MAX}건만 저장됐습니다. (선택: ${all.length}건)`
       : `${targets.length}건 저장됐습니다.`;
     if (downloadToastTimer.current) clearTimeout(downloadToastTimer.current);
     setDownloadToast(msg);
