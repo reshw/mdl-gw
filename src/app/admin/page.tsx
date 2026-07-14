@@ -28,8 +28,9 @@ interface StorageData {
   limits: { reads_per_day: number; writes_per_day: number; storage_gib: number };
 }
 
-interface RoutingFailure {
+interface RoutingLog {
   email: string;
+  success: boolean;
   error: string;
   createdAt: string;
 }
@@ -44,7 +45,7 @@ export default function AdminPage() {
   const [storageLoading, setStorageLoading] = useState(false);
   const [shareRequests, setShareRequests] = useState<ShareRequest[]>([]);
   const [shareProcessing, setShareProcessing] = useState<string | null>(null);
-  const [routingFailures, setRoutingFailures] = useState<RoutingFailure[]>([]);
+  const [routingLogs, setRoutingLogs] = useState<RoutingLog[]>([]);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) router.push("/");
@@ -67,7 +68,7 @@ export default function AdminPage() {
     }
     if (routingRes.ok) {
       const data = await routingRes.json();
-      setRoutingFailures(data.failures ?? []);
+      setRoutingLogs(data.logs ?? []);
     }
   }, []);
 
@@ -168,24 +169,34 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
-        {routingFailures.length > 0 && (
-          <div className="mb-8 rounded-xl border border-red-200 bg-red-50 p-4">
-            <h2 className="text-sm font-semibold text-red-800 mb-3">
-              이메일 라우팅 자동 설정 실패 ({routingFailures.length}건)
+        {routingLogs.length > 0 && (
+          <div className="mb-8 rounded-xl border border-zinc-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-zinc-900 mb-3">
+              이메일 라우팅 자동 설정 로그 (최근 {routingLogs.length}건)
             </h2>
             <div className="flex flex-col gap-2">
-              {routingFailures.map((f, i) => (
-                <div key={i} className="text-xs bg-white rounded-lg border border-red-100 p-3">
+              {routingLogs.map((log, i) => (
+                <div
+                  key={i}
+                  className={`text-xs rounded-lg border p-3 ${
+                    log.success ? "bg-zinc-50 border-zinc-100" : "bg-red-50 border-red-100"
+                  }`}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-zinc-900">{f.email}</span>
-                    <span className="text-zinc-400">{new Date(f.createdAt).toLocaleString("ko-KR")}</span>
+                    <span className="flex items-center gap-2">
+                      <span className={log.success ? "text-emerald-600" : "text-red-600"}>
+                        {log.success ? "✓ 성공" : "✕ 실패"}
+                      </span>
+                      <span className="font-medium text-zinc-900">{log.email}</span>
+                    </span>
+                    <span className="text-zinc-400">{new Date(log.createdAt).toLocaleString("ko-KR")}</span>
                   </div>
-                  <p className="text-red-600 mt-1 break-all">{f.error}</p>
+                  {!log.success && <p className="text-red-600 mt-1 break-all">{log.error}</p>}
                 </div>
               ))}
             </div>
-            <p className="text-xs text-red-500 mt-3">
-              위 계정들은 Cloudflare Email Routing 룰이 자동 생성되지 않았습니다. 대시보드에서 수동으로 확인해주세요.
+            <p className="text-xs text-zinc-400 mt-3">
+              실패 건은 Cloudflare Email Routing 룰이 자동 생성되지 않은 것이니 대시보드에서 수동으로 확인해주세요.
             </p>
           </div>
         )}

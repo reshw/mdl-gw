@@ -10,21 +10,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 401 });
   }
 
-  // success==false 대상 orderBy는 복합 인덱스가 필요하므로, 최근 N건을 가져와 코드에서 필터링한다.
   const snap = await adminDb.collection("routing_logs")
     .orderBy("createdAt", "desc")
-    .limit(50)
+    .limit(30)
     .get();
 
-  const failures = snap.docs
-    .map((doc) => doc.data())
-    .filter((d) => d.success === false)
-    .slice(0, 20)
-    .map((d) => ({
+  const logs = snap.docs.map((doc) => {
+    const d = doc.data();
+    return {
       email: d.email,
+      success: d.success === true,
       error: d.error ?? "",
       createdAt: d.createdAt,
-    }));
+    };
+  });
 
-  return NextResponse.json({ failures });
+  return NextResponse.json({ logs });
 }
