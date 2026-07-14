@@ -28,6 +28,12 @@ interface StorageData {
   limits: { reads_per_day: number; writes_per_day: number; storage_gib: number };
 }
 
+interface RoutingFailure {
+  email: string;
+  error: string;
+  createdAt: string;
+}
+
 export default function AdminPage() {
   const { user, loading, isAdmin } = useAuth();
   const router = useRouter();
@@ -38,6 +44,7 @@ export default function AdminPage() {
   const [storageLoading, setStorageLoading] = useState(false);
   const [shareRequests, setShareRequests] = useState<ShareRequest[]>([]);
   const [shareProcessing, setShareProcessing] = useState<string | null>(null);
+  const [routingFailures, setRoutingFailures] = useState<RoutingFailure[]>([]);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) router.push("/");
@@ -45,9 +52,10 @@ export default function AdminPage() {
 
   const fetchRequests = useCallback(async () => {
     const token = await getIdToken(auth.currentUser!);
-    const [res, shareRes] = await Promise.all([
+    const [res, shareRes, routingRes] = await Promise.all([
       fetch("/api/admin/requests", { headers: { Authorization: `Bearer ${token}` } }),
       fetch("/api/admin/share-requests", { headers: { Authorization: `Bearer ${token}` } }),
+      fetch("/api/admin/routing-logs", { headers: { Authorization: `Bearer ${token}` } }),
     ]);
     if (res.ok) {
       const data = await res.json();
@@ -56,6 +64,10 @@ export default function AdminPage() {
     if (shareRes.ok) {
       const data = await shareRes.json();
       setShareRequests(data.requests ?? []);
+    }
+    if (routingRes.ok) {
+      const data = await routingRes.json();
+      setRoutingFailures(data.failures ?? []);
     }
   }, []);
 
@@ -156,6 +168,28 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+        {routingFailures.length > 0 && (
+          <div className="mb-8 rounded-xl border border-red-200 bg-red-50 p-4">
+            <h2 className="text-sm font-semibold text-red-800 mb-3">
+              이메일 라우팅 자동 설정 실패 ({routingFailures.length}건)
+            </h2>
+            <div className="flex flex-col gap-2">
+              {routingFailures.map((f, i) => (
+                <div key={i} className="text-xs bg-white rounded-lg border border-red-100 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-zinc-900">{f.email}</span>
+                    <span className="text-zinc-400">{new Date(f.createdAt).toLocaleString("ko-KR")}</span>
+                  </div>
+                  <p className="text-red-600 mt-1 break-all">{f.error}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-red-500 mt-3">
+              위 계정들은 Cloudflare Email Routing 룰이 자동 생성되지 않았습니다. 대시보드에서 수동으로 확인해주세요.
+            </p>
+          </div>
+        )}
+
         {requests.length === 0 ? (
           <p className="text-sm text-zinc-400">대기 중인 가입 신청이 없습니다.</p>
         ) : (

@@ -58,10 +58,26 @@ export async function POST(req: NextRequest) {
     // 신청 시 비활성으로 생성된 계정 활성화
     await adminAuth.updateUser(uid, { disabled: false });
 
+    // Cloudflare API 실패는 approve 자체를 막지 않지만(non-fatal), 콘솔 로그만으로는
+    // 배포 후 사라지므로 Firestore에도 남겨 나중에 대시보드/점검 스크립트에서 확인 가능하게 한다.
     try {
       await addEmailRoutingRule(email);
+      await adminDb.collection("routing_logs").add({
+        email,
+        action: "add_email_routing_rule",
+        success: true,
+        createdAt: new Date().toISOString(),
+      });
     } catch (e) {
-      console.error("이메일 라우팅 규칙 추가 실패 (수동 설정 필요):", e instanceof Error ? e.message : e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("이메일 라우팅 규칙 추가 실패 (수동 설정 필요):", msg);
+      await adminDb.collection("routing_logs").add({
+        email,
+        action: "add_email_routing_rule",
+        success: false,
+        error: msg.slice(0, 1000),
+        createdAt: new Date().toISOString(),
+      }).catch(() => {});
     }
 
     await adminDb.collection("members").doc(email).set({
