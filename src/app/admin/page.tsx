@@ -170,34 +170,20 @@ export default function AdminPage() {
           </div>
         </div>
         {routingLogs.length > 0 && (
-          <div className="mb-8 rounded-xl border border-zinc-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-zinc-900 mb-3">
-              이메일 라우팅 자동 설정 로그 (최근 {routingLogs.length}건)
-            </h2>
-            <div className="flex flex-col gap-2">
+          <div className="mb-8">
+            <h2 className="text-xs font-medium text-zinc-400 mb-2">이메일 라우팅 로그</h2>
+            <div className="flex flex-col divide-y divide-zinc-100 border-t border-b border-zinc-100">
               {routingLogs.map((log, i) => (
-                <div
-                  key={i}
-                  className={`text-xs rounded-lg border p-3 ${
-                    log.success ? "bg-zinc-50 border-zinc-100" : "bg-red-50 border-red-100"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <span className={log.success ? "text-emerald-600" : "text-red-600"}>
-                        {log.success ? "✓ 성공" : "✕ 실패"}
-                      </span>
-                      <span className="font-medium text-zinc-900">{log.email}</span>
-                    </span>
-                    <span className="text-zinc-400">{new Date(log.createdAt).toLocaleString("ko-KR")}</span>
-                  </div>
-                  {!log.success && <p className="text-red-600 mt-1 break-all">{log.error}</p>}
+                <div key={i} className="text-xs py-2 flex items-center gap-3">
+                  <span className={log.success ? "text-zinc-400" : "text-red-500"}>
+                    {log.success ? "성공" : "실패"}
+                  </span>
+                  <span className="text-zinc-700">{log.email}</span>
+                  <span className="text-zinc-400">{new Date(log.createdAt).toLocaleString("ko-KR")}</span>
+                  {!log.success && <span className="text-zinc-400 truncate">{log.error}</span>}
                 </div>
               ))}
             </div>
-            <p className="text-xs text-zinc-400 mt-3">
-              실패 건은 Cloudflare Email Routing 룰이 자동 생성되지 않은 것이니 대시보드에서 수동으로 확인해주세요.
-            </p>
           </div>
         )}
 
