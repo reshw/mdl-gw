@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
             createdAt: sentAt,
             deliveredTo: recipient,
           });
-          notify(recipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
+          notify(recipient, { from: fromEmail, subject, date: sentAt, mailId }).catch(() => {});
         } else {
           // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
           const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
@@ -298,7 +298,7 @@ export async function POST(req: NextRequest) {
           createdAt: sentAt,
           deliveredTo: ccRecipient,
         });
-        notify(ccRecipient, { from: fromEmail, subject, date: sentAt }).catch(() => {});
+        notify(ccRecipient, { from: fromEmail, subject, date: sentAt, mailId }).catch(() => {});
       }
     }
 

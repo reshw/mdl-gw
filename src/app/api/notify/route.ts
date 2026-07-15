@@ -8,11 +8,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "인증 실패" }, { status: 401 });
   }
 
-  const { to, from, subject, date } = await req.json();
+  const { to, from, subject, date, mailId } = await req.json();
   if (!to || !from || !subject) {
     return NextResponse.json({ error: "필수 항목 누락" }, { status: 400 });
   }
 
-  await notify(to, { from, subject, date: date ?? new Date().toISOString() });
+  await notify(to, { from, subject, date: date ?? new Date().toISOString(), mailId });
   return NextResponse.json({ ok: true });
 }

@@ -1,4 +1,5 @@
 import { adminDb } from "@/lib/firebase-admin";
+import { sendPushNotification } from "@/lib/push";
 
 const NOTIFY_ENDPOINT = process.env.NOTIFY_ENDPOINT ?? "";
 const NOTIFY_SECRET = process.env.NOTIFY_SECRET ?? "";
@@ -58,14 +59,23 @@ function escapeHtml(str: string): string {
 
 export async function notify(
   recipientMailEmail: string,
+  mail: { from: string; subject: string; date: string; mailId?: string }
+): Promise<void> {
+  const memberDoc = await adminDb.collection("members").doc(recipientMailEmail).get();
+  if (!memberDoc.exists) return;
+  const member = memberDoc.data()!;
+
+  await Promise.allSettled([
+    sendEmailNotification(member, mail),
+    sendPushNotification(recipientMailEmail, member, mail),
+  ]);
+}
+
+async function sendEmailNotification(
+  member: FirebaseFirestore.DocumentData,
   mail: { from: string; subject: string; date: string }
 ): Promise<void> {
   if (!NOTIFY_ENDPOINT || !NOTIFY_SECRET) return;
-
-  const memberDoc = await adminDb.collection("members").doc(recipientMailEmail).get();
-  if (!memberDoc.exists) return;
-
-  const member = memberDoc.data()!;
   if (member.notifications?.emailEnabled === false) return;
 
   const personalEmail: string = member.personalEmail ?? "";

@@ -17,18 +17,26 @@ export async function GET(req: NextRequest) {
   if (!email) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
 
   const doc = await adminDb.collection("members").doc(email).get();
-  const notifications = doc.data()?.notifications ?? { emailEnabled: true };
-  return NextResponse.json(notifications);
+  const saved = doc.data()?.notifications ?? {};
+  return NextResponse.json({
+    emailEnabled: saved.emailEnabled !== false,
+    pushEnabled: saved.pushEnabled !== false,
+  });
 }
 
 export async function POST(req: NextRequest) {
   const email = await getEmail(req);
   if (!email) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
 
-  const { emailEnabled } = await req.json();
-  await adminDb.collection("members").doc(email).set(
-    { notifications: { emailEnabled: !!emailEnabled } },
-    { merge: true }
-  );
+  const { emailEnabled, pushEnabled } = await req.json();
+  const update: Record<string, boolean> = {};
+  if (emailEnabled !== undefined) update["notifications.emailEnabled"] = !!emailEnabled;
+  if (pushEnabled !== undefined) update["notifications.pushEnabled"] = !!pushEnabled;
+  if (Object.keys(update).length > 0) {
+    // update()는 문서가 없으면 실패하므로 set+merge 대신 점표기 병합을 위해 update 사용,
+    // 문서가 없을 수 있으니 먼저 merge로 보장
+    await adminDb.collection("members").doc(email).set({}, { merge: true });
+    await adminDb.collection("members").doc(email).update(update);
+  }
   return NextResponse.json({ ok: true });
 }
