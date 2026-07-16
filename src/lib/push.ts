@@ -34,13 +34,23 @@ export async function sendPushNotification(
   member: DocumentData,
   mail: { from: string; subject: string; mailId?: string; text?: string }
 ): Promise<void> {
-  if (member.notifications?.pushEnabled === false) return;
+  if (member.notifications?.pushEnabled === false) {
+    console.log(`[push] ${recipientMailEmail}: pushEnabled=false, 스킵`);
+    return;
+  }
 
   const tokens: string[] = Array.isArray(member.fcmTokens) ? member.fcmTokens : [];
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.log(`[push] ${recipientMailEmail}: 등록된 fcmTokens 없음, 스킵`);
+    return;
+  }
 
   const app = resolvePushApp();
-  if (!app) return;
+  if (!app) {
+    console.log(`[push] ${recipientMailEmail}: pushApp 없음(FIREBASE_PUSH_SERVICE_ACCOUNT 미설정 + admin 앱도 없음), 스킵`);
+    return;
+  }
+  console.log(`[push] ${recipientMailEmail}: app=${app.name}/${app.options.projectId} tokens=${tokens.length}`);
 
   // iOS 전용 앱이라 top-level notification 대신 apns.payload.aps.alert로 title/subtitle/body를 직접 구성.
   // title(굵게) = 알림 받은 계정 주소, subtitle = 메일 제목, body = 본문 미리보기.
@@ -64,6 +74,11 @@ export async function sendPushNotification(
       },
     },
   });
+
+  console.log(
+    `[push] ${recipientMailEmail}: 성공=${res.successCount} 실패=${res.failureCount} ` +
+      res.responses.map((r, i) => `token${i}:${r.success ? "ok" : (r.error?.code ?? r.error?.message ?? "unknown")}`).join(", ")
+  );
 
   // 만료/삭제된 토큰 정리
   const invalid: string[] = [];

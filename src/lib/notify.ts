@@ -62,13 +62,21 @@ export async function notify(
   mail: { from: string; subject: string; date: string; mailId?: string; text?: string }
 ): Promise<void> {
   const memberDoc = await adminDb.collection("members").doc(recipientMailEmail).get();
-  if (!memberDoc.exists) return;
+  if (!memberDoc.exists) {
+    console.log(`[notify] members/${recipientMailEmail} 문서 없음, 스킵`);
+    return;
+  }
   const member = memberDoc.data()!;
 
-  await Promise.allSettled([
+  const results = await Promise.allSettled([
     sendEmailNotification(member, mail),
     sendPushNotification(recipientMailEmail, member, mail),
   ]);
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(`[notify] ${i === 0 ? "email" : "push"} 실패 (${recipientMailEmail}):`, r.reason);
+    }
+  });
 }
 
 async function sendEmailNotification(
