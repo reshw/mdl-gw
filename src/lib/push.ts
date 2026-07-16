@@ -22,10 +22,17 @@ function resolvePushApp(): App | null {
   return pushApp;
 }
 
+// 알림 본문 미리보기: HTML 태그/개행 제거 후 앞부분만 노출
+function buildPreview(text: string | undefined, maxLen = 100): string {
+  if (!text) return "";
+  const plain = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return plain.length > maxLen ? `${plain.slice(0, maxLen)}…` : plain;
+}
+
 export async function sendPushNotification(
   recipientMailEmail: string,
   member: DocumentData,
-  mail: { from: string; subject: string; mailId?: string }
+  mail: { from: string; subject: string; mailId?: string; text?: string }
 ): Promise<void> {
   if (member.notifications?.pushEnabled === false) return;
 
@@ -35,12 +42,10 @@ export async function sendPushNotification(
   const app = resolvePushApp();
   if (!app) return;
 
+  // iOS 전용 앱이라 top-level notification 대신 apns.payload.aps.alert로 title/subtitle/body를 직접 구성.
+  // title(굵게) = 알림 받은 계정 주소, subtitle = 메일 제목, body = 본문 미리보기.
   const res = await getMessaging(app).sendEachForMulticast({
     tokens,
-    notification: {
-      title: mail.from,
-      body: mail.subject,
-    },
     data: {
       mailEmail: recipientMailEmail,
       ...(mail.mailId ? { mailId: mail.mailId } : {}),
@@ -48,6 +53,11 @@ export async function sendPushNotification(
     apns: {
       payload: {
         aps: {
+          alert: {
+            title: recipientMailEmail,
+            subtitle: mail.subject,
+            body: buildPreview(mail.text) || mail.subject,
+          },
           sound: "default",
           threadId: mail.from,
         },

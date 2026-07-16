@@ -59,7 +59,7 @@ function escapeHtml(str: string): string {
 
 export async function notify(
   recipientMailEmail: string,
-  mail: { from: string; subject: string; date: string; mailId?: string }
+  mail: { from: string; subject: string; date: string; mailId?: string; text?: string }
 ): Promise<void> {
   const memberDoc = await adminDb.collection("members").doc(recipientMailEmail).get();
   if (!memberDoc.exists) return;
