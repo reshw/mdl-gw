@@ -53,7 +53,9 @@ export async function sendPushNotification(
   console.log(`[push] ${recipientMailEmail}: app=${app.name}/${app.options.projectId} tokens=${tokens.length}`);
 
   // iOS 전용 앱이라 top-level notification 대신 apns.payload.aps.alert로 title/subtitle/body를 직접 구성.
-  // title(굵게) = 알림 받은 계정 주소, subtitle = 메일 제목, body = 본문 미리보기.
+  // title(굵게) = 메일 제목(누가 보냈든 결국 가장 중요한 정보), subtitle = 발신자, body = 수신 계정 + 본문 미리보기.
+  const preview = buildPreview(mail.text);
+  const body = preview ? `수신: ${recipientMailEmail}\n${preview}` : `수신: ${recipientMailEmail}`;
   const res = await getMessaging(app).sendEachForMulticast({
     tokens,
     data: {
@@ -64,9 +66,9 @@ export async function sendPushNotification(
       payload: {
         aps: {
           alert: {
-            title: recipientMailEmail,
-            subtitle: mail.subject,
-            body: buildPreview(mail.text) || mail.subject,
+            title: mail.subject,
+            subtitle: mail.from,
+            body,
           },
           sound: "default",
           threadId: mail.from,
