@@ -2,6 +2,22 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getApps, initializeApp, cert, App } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import { FieldValue, DocumentData } from "firebase-admin/firestore";
+import { after } from "next/server";
+import { senderDomain, getBimiStatus, fetchAndCacheBimi, bimiConfigured } from "@/lib/bimi";
+
+const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
+
+// "이름 <a@b.com>" → { name: "이름", handle: "a@b.com" }
+function parseSender(from: string): { name: string; handle: string } {
+  const m = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (m) {
+    const name = m[1].replace(/^"|"$/g, "").trim();
+    const handle = m[2].trim();
+    return { name: name || handle, handle };
+  }
+  const handle = from.trim();
+  return { name: handle, handle };
+}
 
 // FCM 발송에 쓸 admin 앱.
 // iOS 앱의 기본(default) FirebaseApp = 푸시 전용 중앙 프로젝트인데,
@@ -52,15 +68,37 @@ export async function sendPushNotification(
   }
   console.log(`[push] ${recipientMailEmail}: app=${app.name}/${app.options.projectId} tokens=${tokens.length}`);
 
+  // 발신 도메인 BIMI 로고: 캐시에 있으면 알림에 첨부(발신자 아바타), 처음 보는 도메인이면
+  // 백그라운드로 조회·캐싱만 예약(이번 알림은 지연 없이 앱 기본 아이콘으로 발송).
+  const sender = parseSender(mail.from);
+  const domain = senderDomain(mail.from);
+  let logoImageUrl: string | undefined;
+  if (bimiConfigured() && domain) {
+    const status = await getBimiStatus(domain);
+    if (status === "has") {
+      logoImageUrl = `https://gw.${MAIL_DOMAIN}/api/bimi-logo?domain=${encodeURIComponent(domain)}`;
+    } else if (status === "uncached") {
+      try {
+        after(fetchAndCacheBimi(domain));
+      } catch {
+        // after()는 요청 컨텍스트 밖에서 호출 시 throw — 그 경우 조용히 스킵
+      }
+    }
+  }
+
   // iOS 전용 앱이라 top-level notification 대신 apns.payload.aps.alert로 title/subtitle/body를 직접 구성.
   // title(굵게) = 메일 제목(누가 보냈든 결국 가장 중요한 정보), subtitle = 발신자, body = 수신 계정 + 본문 미리보기.
+  // 로고가 있으면 mutable-content=1로 Notification Service Extension을 깨워 발신자 아바타(+앱 아이콘 배지)로 표시.
   const preview = buildPreview(mail.text);
   const body = preview ? `수신: ${recipientMailEmail}\n${preview}` : `수신: ${recipientMailEmail}`;
   const res = await getMessaging(app).sendEachForMulticast({
     tokens,
     data: {
       mailEmail: recipientMailEmail,
+      senderName: sender.name,
+      senderHandle: sender.handle,
       ...(mail.mailId ? { mailId: mail.mailId } : {}),
+      ...(logoImageUrl ? { imageUrl: logoImageUrl } : {}),
     },
     apns: {
       payload: {
@@ -72,6 +110,7 @@ export async function sendPushNotification(
           },
           sound: "default",
           threadId: mail.from,
+          ...(logoImageUrl ? { "mutable-content": 1 } : {}),
         },
       },
     },
