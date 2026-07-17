@@ -1,5 +1,6 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { sendPushNotification } from "@/lib/push";
+import { createUnsubscribeToken } from "@/lib/unsubscribe-token";
 
 const NOTIFY_ENDPOINT = process.env.NOTIFY_ENDPOINT ?? "";
 const NOTIFY_SECRET = process.env.NOTIFY_SECRET ?? "";
@@ -7,7 +8,7 @@ const MAIL_DOMAIN = process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr";
 const MAIL_LABEL = MAIL_DOMAIN.split(".")[0].toUpperCase(); // ourim.kr → OURIM, mdl.kr → MDL
 const APP_URL = `https://gw.${MAIL_DOMAIN}`;
 
-function buildHtml(from: string, subject: string, date: string): string {
+function buildHtml(from: string, subject: string, date: string, unsubscribeUrl: string): string {
   const time = new Date(date).toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -44,6 +45,8 @@ function buildHtml(from: string, subject: string, date: string): string {
         <!-- 푸터 -->
         <tr><td style="padding-top:16px;text-align:center;font-size:11px;color:#a1a1aa;">
           ${MAIL_DOMAIN} 메일 서비스
+          &nbsp;·&nbsp;
+          <a href="${unsubscribeUrl}" style="color:#a1a1aa;text-decoration:underline;">알림 수신거부</a>
         </td></tr>
 
       </table>
@@ -69,7 +72,7 @@ export async function notify(
   const member = memberDoc.data()!;
 
   const results = await Promise.allSettled([
-    sendEmailNotification(member, mail),
+    sendEmailNotification(recipientMailEmail, member, mail),
     sendPushNotification(recipientMailEmail, member, mail),
   ]);
   results.forEach((r, i) => {
@@ -80,6 +83,7 @@ export async function notify(
 }
 
 async function sendEmailNotification(
+  recipientMailEmail: string,
   member: FirebaseFirestore.DocumentData,
   mail: { from: string; subject: string; date: string }
 ): Promise<void> {
@@ -90,7 +94,8 @@ async function sendEmailNotification(
   if (!personalEmail) return;
 
   const subject = `[${MAIL_LABEL}] ${mail.subject}`;
-  const html = buildHtml(mail.from, mail.subject, mail.date);
+  const unsubscribeUrl = `${APP_URL}/api/notify/unsubscribe?token=${encodeURIComponent(createUnsubscribeToken(recipientMailEmail))}`;
+  const html = buildHtml(mail.from, mail.subject, mail.date, unsubscribeUrl);
 
   await fetch(NOTIFY_ENDPOINT, {
     method: "POST",
