@@ -143,6 +143,8 @@ export async function POST(req: NextRequest) {
     const bccList: string[] = bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : [];
     const toStr = toList.join(", ");
     const ccStr = ccList.length > 0 ? ccList.join(", ") : undefined;
+    // BCC는 발신자 본인의 보낸편지함 기록에만 남긴다. 수신자 사본에 넣으면 숨은참조가 아니게 된다.
+    const bccStr = bccList.length > 0 ? bccList.join(", ") : undefined;
     const attachmentNames = (attachments ?? []).map((a: { filename: string }) => a.filename);
 
     const from = USE_SMTP
@@ -197,6 +199,8 @@ export async function POST(req: NextRequest) {
         fromEmail,
         to: toStr,
         ...(ccStr ? { cc: ccStr } : {}),
+        // 데몬이 bcc를 읽어 SMTP 봉투에 실어야 실제로 발송된다(데몬 미대응 시 무시됨).
+        ...(bccStr ? { bcc: bccStr } : {}),
         subject,
         text: text ?? "",
         html: trackedHtml,
@@ -237,7 +241,9 @@ export async function POST(req: NextRequest) {
             : [];
           await adminDb.collection("mails").doc(mailId).set({
             id: mailId,
-            to: recipient,
+            // 실제 수신자가 보는 것과 같게 To/Cc 전체를 남긴다. 폴더 분류는 deliveredTo가 담당.
+            to: toStr,
+            ...(ccStr ? { cc: ccStr } : {}),
             from: fromEmail,
             subject,
             text: text ?? "",
@@ -287,7 +293,8 @@ export async function POST(req: NextRequest) {
           : [];
         await adminDb.collection("mails").doc(mailId).set({
           id: mailId,
-          to: ccRecipient,
+          to: toStr,
+          ...(ccStr ? { cc: ccStr } : {}),
           from: fromEmail,
           subject,
           text: text ?? "",
@@ -307,6 +314,7 @@ export async function POST(req: NextRequest) {
       sentMail: {
         to: toStr,
         ...(ccStr ? { cc: ccStr } : {}),
+        ...(bccStr ? { bcc: bccStr } : {}),
         from: fromEmail,
         subject,
         text: text ?? "",

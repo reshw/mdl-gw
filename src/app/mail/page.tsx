@@ -309,17 +309,63 @@ export default function MailPage() {
     setComposeInit(undefined);
   }
 
+  // 답장 수신자. Reply-To가 있으면 발신자 주소보다 우선한다(공유 메일함·담당자 창구 대응).
+  function replyRecipient(mail: Mail): string {
+    return mail.replyTo?.trim() || mail.from;
+  }
+
   function handleReply(mail: Mail) {
     const prefix = mail.subject.startsWith("Re:") ? "" : "Re: ";
-    setComposeInit({ to: [mail.from], subject: `${prefix}${mail.subject}`, html: quoteHtml(mail) });
+    setComposeInit({ to: [replyRecipient(mail)], subject: `${prefix}${mail.subject}`, html: quoteHtml(mail) });
     setEditingDraft(undefined);
     setComposing(true);
   }
 
+  // 전체답장 수신자 구성(Gmail 방식).
+  //  - 받은 메일: 받는사람 = 발신자(Reply-To 우선), 참조 = 원본 받는사람 + 원본 참조
+  //  - 내가 보낸 메일: 원래 수신자 구성을 그대로 유지 (나 자신에게 답장하는 꼴 방지)
+  // 어느 쪽이든 내 주소와 중복 주소는 제거한다.
+  function replyAllTargets(mail: Mail): { to: string[]; cc: string[] } {
+    const me = mailEmail?.toLowerCase();
+    const seen = new Set<string>();
+    if (me) seen.add(me);
+
+    // 이미 등장한 주소를 걸러내며 목록을 만든다.
+    const pick = (raw?: string): string[] => {
+      const out: string[] = [];
+      for (const chunk of (raw ?? "").split(",")) {
+        const addr = chunk.trim();
+        if (!addr) continue;
+        const email = parseEmailAddress(addr).email.toLowerCase();
+        if (!email || seen.has(email)) continue;
+        seen.add(email);
+        out.push(addr);
+      }
+      return out;
+    };
+
+    const isMine = parseEmailAddress(mail.from).email.toLowerCase() === me;
+    if (isMine) {
+      const to = pick(mail.to);
+      const cc = pick(mail.cc);
+      // 수신자가 나 혼자였던 메일이면 최소한 원래 받는사람은 살려둔다.
+      return to.length > 0 ? { to, cc } : { to: [mail.to], cc };
+    }
+
+    const replyTo = replyRecipient(mail);
+    seen.add(parseEmailAddress(replyTo).email.toLowerCase());
+    return { to: [replyTo], cc: [...pick(mail.to), ...pick(mail.cc)] };
+  }
+
   function handleReplyAll(mail: Mail) {
     const prefix = mail.subject.startsWith("Re:") ? "" : "Re: ";
-    const ccAddrs = mail.cc ? mail.cc.split(",").map((s) => s.trim()).filter(Boolean) : [];
-    setComposeInit({ to: [mail.from], cc: ccAddrs, subject: `${prefix}${mail.subject}`, html: quoteHtml(mail) });
+    const { to, cc } = replyAllTargets(mail);
+    setComposeInit({
+      to,
+      cc,
+      subject: `${prefix}${mail.subject}`,
+      html: quoteHtml(mail),
+    });
     setEditingDraft(undefined);
     setComposing(true);
   }
@@ -372,8 +418,10 @@ export default function MailPage() {
       : (mail.text ?? "") + buildAttachmentLinksTxt(mail);
     const lines = [
       `From: ${mail.from}`,
+      ...(mail.replyTo ? [`Reply-To: ${mail.replyTo}`] : []),
       `To: ${mail.to}`,
       ...(mail.cc ? [`Cc: ${mail.cc}`] : []),
+      ...(mail.bcc ? [`Bcc: ${mail.bcc}`] : []),
       `Subject: ${encodeHeader(mail.subject)}`,
       `Date: ${date}`,
       `MIME-Version: 1.0`,
@@ -401,7 +449,7 @@ export default function MailPage() {
   function quoteHtml(mail: Mail): string {
     const date = new Date(mail.createdAt).toLocaleString("ko-KR");
     const body = mail.html || `<pre>${mail.text ?? ""}</pre>`;
-    return `<br><br><p style="margin:0 0 8px 0;color:#9ca3af;font-size:12px;">──────── Original Message ────────</p><div style="color:#6b7280;font-size:13px;"><p style="margin:0 0 4px 0"><b>보낸 사람:</b> ${mail.from}</p><p style="margin:0 0 4px 0"><b>날짜:</b> ${date}</p><p style="margin:0 0 8px 0"><b>제목:</b> ${mail.subject}</p>${body}</div>`;
+    return `<br><br><p style="margin:0 0 8px 0;color:#9ca3af;font-size:12px;">──────── Original Message ────────</p><div style="color:#6b7280;font-size:13px;"><p style="margin:0 0 4px 0"><b>보낸 사람:</b> ${mail.from}</p><p style="margin:0 0 4px 0"><b>받는 사람:</b> ${mail.to}</p>${mail.cc ? `<p style="margin:0 0 4px 0"><b>참조:</b> ${mail.cc}</p>` : ""}<p style="margin:0 0 4px 0"><b>날짜:</b> ${date}</p><p style="margin:0 0 8px 0"><b>제목:</b> ${mail.subject}</p>${body}</div>`;
   }
 
   async function handleTrash(mail: Mail, e: React.MouseEvent) {
@@ -1083,7 +1131,8 @@ export default function MailPage() {
                       <button onClick={() => handleMarkUnread(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">안읽음</button>
                     )}
                     <button onClick={() => handleReply(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">답장</button>
-                    {selected.cc && (
+                    {/* 참조가 없어도 받는사람이 여럿이면 전체답장이 의미가 있다 */}
+                    {replyAllTargets(selected).cc.length > 0 && (
                       <button onClick={() => handleReplyAll(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전체답장</button>
                     )}
                     <button onClick={() => handleForward(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전달</button>
@@ -1224,6 +1273,26 @@ export default function MailPage() {
                   </div>
                 </div>
               )}
+              {/* 숨은참조는 발신자 본인의 보낸편지함에만 기록되므로 sent 폴더에서만 노출된다. */}
+              {folder === "sent" && selected.bcc && (
+                <div className="flex gap-2">
+                  <span className="shrink-0">숨은참조:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {selected.bcc.split(",").map((addr, i) => (
+                      <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-0.5">
+                        {addr.trim()}
+                        <button
+                          onClick={() => setQuickAdd(parseEmailAddress(addr.trim()))}
+                          title="연락처 추가"
+                          className="text-zinc-300 hover:text-zinc-500 leading-none"
+                        >
+                          +
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2">
                 <span className="shrink-0">날짜:</span>
                 <span className="text-zinc-900">{new Date(selected.createdAt).toLocaleString("ko-KR")}</span>
@@ -1248,6 +1317,7 @@ export default function MailPage() {
                     onClick={() => {
                       setComposeInit({
                         to: selected.to.split(",").map((s) => s.trim()).filter(Boolean),
+                        cc: (selected.cc ?? "").split(",").map((s) => s.trim()).filter(Boolean),
                         subject: selected.subject,
                         html: selected.html,
                       });

@@ -24,15 +24,22 @@ interface Props {
   mailEmail?: string | null;
 }
 
+// 임시저장은 주소를 쉼표 문자열로 보관한다. 값이 없으면 undefined를 돌려줘 init 폴백이 살도록.
+function splitAddrs(raw?: string): string[] | undefined {
+  if (!raw) return undefined;
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
 export default function ComposeModal({ onClose, draft, init, mailEmail }: Props) {
   const [to, setTo] = useState<string[]>(
     draft?.to ? draft.to.split(",").map((s) => s.trim()).filter(Boolean)
     : init?.to ?? []
   );
-  const [cc, setCc] = useState<string[]>(init?.cc ?? []);
-  const [bcc, setBcc] = useState<string[]>([]);
-  const [showCc, setShowCc] = useState((init?.cc ?? []).length > 0);
-  const [showBcc, setShowBcc] = useState(false);
+  const [cc, setCc] = useState<string[]>(splitAddrs(draft?.cc) ?? init?.cc ?? []);
+  const [bcc, setBcc] = useState<string[]>(splitAddrs(draft?.bcc) ?? []);
+  const [showCc, setShowCc] = useState((splitAddrs(draft?.cc) ?? init?.cc ?? []).length > 0);
+  const [showBcc, setShowBcc] = useState((splitAddrs(draft?.bcc) ?? []).length > 0);
   const [subject, setSubject] = useState(draft?.subject ?? init?.subject ?? "");
   const [html, setHtml] = useState(draft?.html ?? init?.html ?? "");
   const [files, setFiles] = useState<File[]>([]);
@@ -102,15 +109,16 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { isDirtyRef.current = true; }, [to, subject, html]);
+  useEffect(() => { isDirtyRef.current = true; }, [to, cc, bcc, subject, html]);
 
+  // cc/bcc도 의존성에 넣어야 자동저장 콜백이 최신 참조 값을 캡처한다.
   useEffect(() => {
     const interval = setInterval(() => {
       if (isDirtyRef.current) handleSaveDraft();
     }, 30_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [to, subject, html]);
+  }, [to, cc, bcc, subject, html]);
 
   async function handleSaveDraft() {
     if (!mailEmail) return;
@@ -120,6 +128,8 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
         id: draftIdRef.current,
         userEmail: mailEmail,
         to: to.join(", "),
+        cc: cc.join(", "),
+        bcc: bcc.join(", "),
         subject,
         html,
       });

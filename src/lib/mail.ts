@@ -32,6 +32,12 @@ export interface Mail {
   id: string;
   to: string;
   cc?: string;
+  /** 발신자 본인의 보낸편지함 기록에만 존재. 수신 메일에는 원문상 남지 않는다. */
+  bcc?: string;
+  /** 수신 메일의 Reply-To. 있으면 답장 수신자는 from이 아니라 이 주소다. */
+  replyTo?: string;
+  /** Cloudflare Email Routing이 기록한 SPF/DKIM/DMARC 검증 결과 원문. */
+  authResults?: string;
   from: string;
   subject: string;
   text: string;
@@ -208,6 +214,8 @@ export interface Draft {
   id: string;
   userEmail: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   subject: string;
   html: string;
   updatedAt: string;
@@ -233,12 +241,17 @@ export async function saveDraft(data: {
   id?: string;
   userEmail: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   subject: string;
   html: string;
 }): Promise<string> {
   const payload = {
     userEmail: data.userEmail,
     to: data.to,
+    // 참조/숨은참조도 함께 보관해야 전체답장을 임시저장했다 열었을 때 수신자가 유실되지 않는다.
+    cc: data.cc ?? "",
+    bcc: data.bcc ?? "",
     subject: data.subject,
     html: data.html,
     updatedAt: new Date().toISOString(),
@@ -278,6 +291,7 @@ export async function getTrackingStatus(trackIds: Record<string, string>): Promi
 export async function saveSentMail(data: {
   to: string;
   cc?: string;
+  bcc?: string;
   from: string;
   subject: string;
   text: string;
@@ -290,6 +304,7 @@ export async function saveSentMail(data: {
   await addDoc(collection(getPersonalDb(), "mails"), {
     to: data.to,
     ...(data.cc ? { cc: data.cc } : {}),
+    ...(data.bcc ? { bcc: data.bcc } : {}),
     from: data.from,
     subject: data.subject,
     text: data.text,
