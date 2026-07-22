@@ -160,6 +160,9 @@ export async function POST(req: NextRequest) {
 
     const sentAt = new Date().toISOString();
     const trackIds: Record<string, string> = {};
+    // 수신자별 발송 실패를 모았다가 마지막에 한 번에 보고한다. 첫 실패로 중단하면
+    // 나머지 수신자에게 보낼 기회를 잃는다.
+    const sendFailures: string[] = [];
 
     if (USE_SMTP) {
       // ── SMTP 모드: 발송 큐에 저장 (사내 에이전트가 처리) ──────
@@ -258,16 +261,16 @@ export async function POST(req: NextRequest) {
         } else {
           // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
           const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-          const externalCcStr = externalCcList.length > 0 ? externalCcList.join(", ") : undefined;
           const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-          const externalBccStr = externalBccList.length > 0 ? externalBccList.join(", ") : undefined;
 
-          await resend!.emails.send({
+          // cc/bcc는 반드시 배열로 넘긴다. 쉼표로 이어붙인 문자열은 주소가 2개 이상일 때
+          // Resend가 단일 주소로 파싱하려다 요청 전체를 거부한다.
+          const { error: sendError } = await resend!.emails.send({
             from,
             to: [recipient],
             headers: toList.length > 1 ? { "To": toStr } : undefined,
-            ...(externalCcStr ? { cc: externalCcStr } : {}),
-            ...(externalBccStr ? { bcc: externalBccStr } : {}),
+            ...(externalCcList.length > 0 ? { cc: externalCcList } : {}),
+            ...(externalBccList.length > 0 ? { bcc: externalBccList } : {}),
             subject,
             text: text ?? "",
             html: trackedHtml,
@@ -276,6 +279,12 @@ export async function POST(req: NextRequest) {
               content: a.content ? Buffer.from(a.content, "base64") : undefined,
             })),
           });
+
+          // Resend SDK는 API 오류를 throw하지 않고 error로 반환한다. 확인하지 않으면
+          // 발송이 거부돼도 성공 응답이 나가고 보낸편지함에만 기록이 남는다.
+          if (sendError) {
+            sendFailures.push(`${recipient}: ${sendError.message ?? String(sendError)}`);
+          }
         }
       }
 
@@ -307,6 +316,15 @@ export async function POST(req: NextRequest) {
         });
         notify(ccRecipient, { from: fromEmail, subject, date: sentAt, mailId, text }).catch(() => {});
       }
+    }
+
+    // 한 명이라도 실패했으면 성공 응답을 내지 않는다. 성공으로 응답하면 클라이언트가
+    // 보낸편지함에 기록해 버려서, 도착하지 않은 메일이 보낸 것처럼 남는다.
+    if (sendFailures.length > 0) {
+      return NextResponse.json(
+        { error: `발송 실패 — ${sendFailures.join(" / ")}` },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
