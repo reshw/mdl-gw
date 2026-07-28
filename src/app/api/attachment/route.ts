@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const R2_ACCOUNT_ID = "163aa19364534ce7386a3430efacb2a3";
+const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? "163aa19364534ce7386a3430efacb2a3";
 const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
 const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
