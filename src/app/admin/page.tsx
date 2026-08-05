@@ -46,6 +46,9 @@ export default function AdminPage() {
   const [shareRequests, setShareRequests] = useState<ShareRequest[]>([]);
   const [shareProcessing, setShareProcessing] = useState<string | null>(null);
   const [routingLogs, setRoutingLogs] = useState<RoutingLog[]>([]);
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [updateNotes, setUpdateNotes] = useState("");
+  const [updateSending, setUpdateSending] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || !isAdmin)) router.push("/");
@@ -93,6 +96,32 @@ export default function AdminPage() {
       alert("처리 중 오류가 발생했습니다.");
     } finally {
       setShareProcessing(null);
+    }
+  }
+
+  async function handleSendUpdateNotify() {
+    if (!updateVersion.trim() || !updateNotes.trim()) {
+      alert("버전과 변경 내용을 입력하세요.");
+      return;
+    }
+    setUpdateSending(true);
+    try {
+      const token = await getIdToken(auth.currentUser!);
+      const res = await fetch("/api/admin/notify-app-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ version: updateVersion.trim(), notes: updateNotes.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data.error);
+      else {
+        alert("테스터들에게 업데이트 알림을 보냈습니다.");
+        setUpdateNotes("");
+      }
+    } catch {
+      alert("전송 중 오류가 발생했습니다.");
+    } finally {
+      setUpdateSending(false);
     }
   }
 
@@ -169,6 +198,34 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+        {/* mailer-and(안드로이드) 앱 업데이트 알림 */}
+        <div className="mb-8 bg-white rounded-xl border border-zinc-200 p-5">
+          <h2 className="text-sm font-semibold text-zinc-900 mb-3">안드로이드 앱 업데이트 알림</h2>
+          <div className="flex flex-col gap-2">
+            <input
+              type="text"
+              placeholder="버전 (예: 1.2)"
+              value={updateVersion}
+              onChange={(e) => setUpdateVersion(e.target.value)}
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+            />
+            <textarea
+              placeholder="변경 내용 (예: 키보드가 화면 가리던 버그 고침, 다크모드 개선)"
+              value={updateNotes}
+              onChange={(e) => setUpdateNotes(e.target.value)}
+              rows={3}
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm resize-none"
+            />
+            <button
+              onClick={handleSendUpdateNotify}
+              disabled={updateSending}
+              className="self-start rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {updateSending ? "보내는 중..." : "테스터에게 알림 보내기"}
+            </button>
+          </div>
+        </div>
+
         {routingLogs.length > 0 && (
           <div className="mb-8">
             <h2 className="text-xs font-medium text-zinc-400 mb-2">이메일 라우팅 로그</h2>
