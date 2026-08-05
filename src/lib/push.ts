@@ -97,9 +97,12 @@ export async function sendPushNotification(
       mailEmail: recipientMailEmail,
       senderName: sender.name,
       senderHandle: sender.handle,
+      subject: mail.subject,
+      preview,
       ...(mail.mailId ? { mailId: mail.mailId } : {}),
       ...(logoImageUrl ? { imageUrl: logoImageUrl } : {}),
     },
+    android: { priority: "high" },
     apns: {
       payload: {
         aps: {

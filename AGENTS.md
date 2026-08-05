@@ -29,6 +29,11 @@ OpenNext 배포 설정이고, 지금은 쓰지 않는다.** 여기서 `wrangler 
 워커를 배포할 일이 있으면 **먼저 `cd D:/dev/mailer-worker`** 하고, 출력의 `Uploaded <이름>` 을
 확인할 것. 이름에 `-email`이 없으면 저장소를 잘못 짚은 것이다.
 
+## 다른 프로젝트와의 협업
+
+`D:\dev\_shared\AGENTS.md` 참고. 세션 시작 시 `D:\dev\_shared\inbox\mailer\`에 미확인
+메시지가 있는지 확인한다.
+
 ## 테넌트 구조
 
 한 코드베이스가 테넌트별 Vercel 프로젝트로 나뉘어 배포된다(`gw.mdl.kr` / `gw.scnd.kr` / `gw.ourim.kr` 등). 환경변수는 각 Vercel 프로젝트에 설정돼 있고, 로컬 `.env.*` 파일은 개발용 사본이다. 따라서 **한 테넌트를 고치면 나머지 테넌트에도 그대로 나간다** — 변경이 테넌트 공용인지 항상 확인할 것.
