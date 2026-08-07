@@ -11,6 +11,8 @@ const FONT_SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36, 48];
 
 const KOREAN_FONTS = [
   "Malgun Gothic",
+  "Pretendard",
+  "LineSeed",
   "Noto Sans KR",
   "Nanum Gothic",
   "Nanum Myeongjo",
@@ -19,6 +21,10 @@ const KOREAN_FONTS = [
   "Arial",
   "Georgia",
 ];
+
+// 이 5종은 에디터에서만 쓰는 서체라 layout.tsx가 아니라 여기서, 에디터가 뜰 때만 불러온다.
+const GOOGLE_FONTS_HREF = "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Nanum+Gothic:wght@400;700&family=Nanum+Myeongjo&family=Nanum+Pen+Script&family=Black+Han+Sans&display=swap";
+const GOOGLE_FONTS_LINK_ID = "richeditor-google-fonts";
 
 const colorCircleSVG = (color = "#000000") =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="7" fill="${color}" stroke="#aaa" stroke-width="1"/></svg>`;
@@ -45,6 +51,15 @@ export default function RichEditor({ value, onChange }: Props) {
         TabsWidget: tabs.TabsWidget,
       };
     });
+  }, []);
+
+  useEffect(() => {
+    if (document.getElementById(GOOGLE_FONTS_LINK_ID)) return;
+    const link = document.createElement("link");
+    link.id = GOOGLE_FONTS_LINK_ID;
+    link.rel = "stylesheet";
+    link.href = GOOGLE_FONTS_HREF;
+    document.head.appendChild(link);
   }, []);
 
   useEffect(() => {

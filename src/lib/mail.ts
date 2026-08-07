@@ -40,6 +40,7 @@ export interface Mail {
   authResults?: string;
   from: string;
   subject: string;
+  /** 본문. 목록/검색은 text만, 뷰어는 html을 쓴다 — 아래 BODY MIGRATION 주석 참고. */
   text: string;
   html: string;
   date: string;
@@ -60,96 +61,92 @@ export interface MailListOpts {
   folder: "inbox" | "sent";
   imapFolder?: string | null;
   labelId?: string | null;
-  pageSize?: number;
 }
 
-const DEFAULT_PAGE_SIZE = 50;
+export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+export const DEFAULT_PAGE_SIZE = 50;
 
-function buildBaseConstraints(email: string, opts: MailListOpts): QueryConstraint[] {
-  const constraints: QueryConstraint[] = [];
-  if (opts.folder === "sent") {
-    constraints.push(where("from", "==", email));
-  } else {
-    constraints.push(where("deliveredTo", "==", email));
-  }
-  if (opts.imapFolder) constraints.push(where("folder", "==", opts.imapFolder));
-  if (opts.labelId) constraints.push(where("labels", "array-contains", opts.labelId));
-  return constraints;
-}
+/*
+ * BODY MIGRATION — 본문(text/html)을 서브컬렉션으로 분리할 때 손댈 곳
+ *
+ * 지금은 mails 문서 하나에 본문까지 들어있어서, 전체 구독이 본문까지 통째로 끌어온다.
+ * 나중에 본문을 mails/{id}/body 같은 서브컬렉션으로 빼면 바꿀 지점은 셋뿐이다.
+ *
+ *  1. subscribeAllMails — 본문 없는 목록 문서만 받게 된다. 여기 타입을 좁히면
+ *     컴파일러가 본문을 쓰는 곳을 전부 짚어준다.
+ *  2. 뷰어/전달/EML 다운로드 — 메일을 열 때 본문을 따로 한 건 조회해야 한다.
+ *     본문 접근은 이미 이 세 곳에만 몰려 있으므로 목록 코드는 건드릴 필요가 없다.
+ *  3. 목록 미리보기와 내용검색 — 지금 text에 의존한다. 본문이 빠지면 부모 문서에
+ *     짧은 preview 필드가 있어야 하고, 내용검색은 별도 색인이 필요해진다.
+ *     (그래서 본문 분리는 검색 방식 결정과 같이 가야 한다.)
+ */
 
-function postFilter(mails: Mail[], opts: MailListOpts): Mail[] {
-  return mails.filter((m) =>
-    !m.trash && (opts.folder === "sent" ? m.type === "sent" : m.type !== "sent")
-  );
-}
-
-// 첫 페이지(기본 50건) 실시간 구독 — 새 메일 도착하면 자동 갱신
-export function subscribeMailsFirstPage(
+// 이 앱이 보는 메일 전체를 한 번만 구독한다. 받은편지함/보낸편지함/휴지통/안읽음 뱃지/
+// IMAP 폴더 목록/검색이 전부 이 결과에서 파생되므로, 예전처럼 같은 컬렉션을 5번 읽지 않는다.
+// deliveredTo와 from은 서로 다른 필드라 한 쿼리로 못 묶으므로 리스너 두 개를 머지한다.
+export function subscribeAllMails(
   email: string,
-  callback: (mails: Mail[], hasMore: boolean) => void,
-  opts: MailListOpts
+  callback: (mails: Mail[]) => void,
+  onError: (message: string) => void
 ): Unsubscribe {
-  const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
-  const q = query(
-    mailsCollection(email),
-    ...buildBaseConstraints(email, opts),
-    orderBy("createdAt", "desc"),
-    limit(pageSize + 1)
+  let received: Mail[] | null = null;
+  let sent: Mail[] | null = null;
+
+  function emit() {
+    if (received === null || sent === null) return; // 양쪽 첫 스냅샷이 다 와야 목록이 완전해진다
+    const byId = new Map<string, Mail>();
+    for (const m of [...received, ...sent]) byId.set(m.id, m);
+    callback([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+
+  const toMails = (snap: { docs: { id: string; data: () => DocumentData }[] }) =>
+    snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail));
+
+  // 한쪽이 실패하면 emit 조건이 영영 안 채워져 목록이 "불러오는 중"에서 멈춘다.
+  // 조용히 매달려 있지 말고 실패를 그대로 위로 올린다.
+  const fail = (e: unknown) => onError(e instanceof Error ? e.message : String(e));
+
+  const unsub1 = onSnapshot(
+    query(mailsCollection(email), where("deliveredTo", "==", email)),
+    (snap) => { received = toMails(snap); emit(); },
+    fail
+  );
+  const unsub2 = onSnapshot(
+    query(mailsCollection(email), where("from", "==", email)),
+    (snap) => { sent = toMails(snap); emit(); },
+    fail
   );
 
-  return onSnapshot(q, (snapshot) => {
-    const docs = snapshot.docs;
-    const hasMore = docs.length > pageSize;
-    const page = docs.slice(0, pageSize);
-    const mails = postFilter(
-      page.map((d) => ({ id: d.id, ...d.data() } as Mail)),
-      opts
-    );
-    callback(mails, hasMore);
+  return () => { unsub1(); unsub2(); };
+}
+
+// 아래 select*/count* 는 전부 subscribeAllMails 결과를 받는 순수 함수다 — Firestore를 다시 읽지 않는다.
+
+export function selectMails(all: Mail[], opts: MailListOpts): Mail[] {
+  return all.filter((m) => {
+    if (m.trash) return false;
+    if (opts.folder === "sent" ? m.type !== "sent" : m.type === "sent") return false;
+    if (opts.imapFolder && m.folder !== opts.imapFolder) return false;
+    if (opts.labelId && !m.labels?.includes(opts.labelId)) return false;
+    return true;
   });
 }
 
-// 페이지 단위 조회. cursor=null이면 1페이지, 아니면 그 cursor(직전 페이지 마지막 메일의
-// createdAt) 다음부터 한 페이지를 one-shot으로 가져온다. "더보기" 누적 대신 페이지 이동에 쓴다.
-export async function fetchMailsPage(
-  email: string,
-  opts: MailListOpts,
-  cursor: string | null
-): Promise<{ mails: Mail[]; hasMore: boolean }> {
-  const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
-  const q = query(
-    mailsCollection(email),
-    ...buildBaseConstraints(email, opts),
-    orderBy("createdAt", "desc"),
-    ...(cursor ? [startAfter(cursor)] : []),
-    limit(pageSize + 1)
-  );
-  const snap = await getDocs(q);
-  const docs = snap.docs;
-  const hasMore = docs.length > pageSize;
-  const page = docs.slice(0, pageSize);
-  const mails = postFilter(
-    page.map((d) => ({ id: d.id, ...d.data() } as Mail)),
-    opts
-  );
-  return { mails, hasMore };
+export function selectTrash(all: Mail[]): Mail[] {
+  return all.filter((m) => m.trash);
 }
 
-// 검색용 — 로드된 페이지에 갇히지 않도록 폴더/라벨 조건에 맞는 전체 메일을 한 번에 페치
-export async function fetchAllMailsForSearch(
-  email: string,
-  opts: MailListOpts
-): Promise<Mail[]> {
-  const q = query(
-    mailsCollection(email),
-    ...buildBaseConstraints(email, opts),
-    orderBy("createdAt", "desc")
-  );
-  const snap = await getDocs(q);
-  return postFilter(
-    snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail)),
-    opts
-  );
+export function countInboxUnread(all: Mail[]): number {
+  return all.filter((m) => !m.trash && m.type !== "sent" && !m.read).length;
+}
+
+export function listImapFolders(all: Mail[]): string[] {
+  const folders = new Set<string>();
+  for (const m of all) {
+    if (m.type === "sent") continue;
+    if (m.folder && m.folder !== "INBOX") folders.add(m.folder);
+  }
+  return [...folders].sort();
 }
 
 export interface AdvancedSearchOpts {
@@ -164,17 +161,17 @@ export interface AdvancedSearchOpts {
   includeSubfolders?: boolean;
 }
 
-// 상세검색 — Firestore는 부분일치 검색을 지원하지 않으므로 조건에 맞는 전체 메일을
-// 한 번에 페치한 뒤 클라이언트에서 필터링한다. 하위 폴더 포함 시 imapFolder 조건을 뺀다.
-export async function searchMailsAdvanced(
-  email: string,
+// 상세검색 — Firestore는 부분일치 검색을 못 하므로 이미 구독해둔 전체 목록에서 걸러낸다.
+// 하위 폴더 포함 시 imapFolder 조건을 뺀다.
+export function searchMailsAdvanced(
+  all: Mail[],
   baseOpts: MailListOpts,
   adv: AdvancedSearchOpts
-): Promise<Mail[]> {
+): Mail[] {
   const opts: MailListOpts = adv.includeSubfolders
     ? { ...baseOpts, imapFolder: null }
     : baseOpts;
-  const all = await fetchAllMailsForSearch(email, opts);
+  const scoped = selectMails(all, opts);
 
   const from = adv.from?.trim().toLowerCase();
   const to = adv.to?.trim().toLowerCase();
@@ -183,7 +180,7 @@ export async function searchMailsAdvanced(
   // 종료일은 그 날짜의 끝(23:59:59.999)까지 포함해야 "8/7까지"가 8/7 메일을 놓치지 않는다.
   const dateTo = adv.dateTo ? new Date(adv.dateTo).getTime() + 24 * 60 * 60 * 1000 - 1 : null;
 
-  return all.filter((m) => {
+  return scoped.filter((m) => {
     if (from && !m.from.toLowerCase().includes(from)) return false;
     if (to) {
       const scope = adv.toScope ?? "to_cc";
@@ -206,60 +203,6 @@ export async function searchMailsAdvanced(
     }
     return true;
   });
-}
-
-// IMAP 폴더 사이드바용 — deliveredTo 전체에서 폴더 set 추출. 세션당 한 번만 호출.
-export async function fetchFolderSummary(email: string): Promise<string[]> {
-  const q = query(mailsCollection(email), where("deliveredTo", "==", email));
-  const snap = await getDocs(q);
-  const folders = new Set<string>();
-  for (const d of snap.docs) {
-    const f = d.data().folder;
-    if (f && f !== "INBOX") folders.add(f);
-  }
-  return [...folders].sort();
-}
-
-export function subscribeInboxUnread(
-  email: string,
-  callback: (count: number) => void
-): Unsubscribe {
-  const q = query(mailsCollection(email), where("deliveredTo", "==", email));
-  return onSnapshot(q, (snapshot) => {
-    const count = snapshot.docs
-      .map((d) => d.data())
-      .filter((m) => !m.trash && m.type !== "sent" && !m.read)
-      .length;
-    callback(count);
-  });
-}
-
-export function subscribeTrash(
-  email: string,
-  callback: (mails: Mail[]) => void
-): Unsubscribe {
-  let received: Mail[] = [];
-  let sent: Mail[] = [];
-
-  function emit() {
-    const all = [...received, ...sent]
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    callback(all);
-  }
-
-  const q1 = query(mailsCollection(email), where("deliveredTo", "==", email));
-  const q2 = query(mailsCollection(email), where("from", "==", email));
-
-  const unsub1 = onSnapshot(q1, (snap) => {
-    received = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail)).filter((m) => !!m.trash);
-    emit();
-  });
-  const unsub2 = onSnapshot(q2, (snap) => {
-    sent = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail)).filter((m) => !!m.trash && (m as any).type === "sent");
-    emit();
-  });
-
-  return () => { unsub1(); unsub2(); };
 }
 
 export async function moveToTrash(mailId: string, email: string) {

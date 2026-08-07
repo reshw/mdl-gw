@@ -36,11 +36,17 @@ export default function RootLayout({
     <html
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&family=Nanum+Gothic:wght@400;700&family=Nanum+Myeongjo&family=Nanum+Pen+Script&family=Black+Han+Sans&display=swap" rel="stylesheet" />
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        {/* 설정에서 고른 UI 폰트를 첫 페인트 전에 적용 — 없으면 기본(Pretendard)이 잠깐
+            보였다가 저장된 폰트로 바뀌는 깜빡임이 생긴다. 메일 본문과는 무관한 값이다. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var f=localStorage.getItem("mailer.font");if(f==="lineseed")document.documentElement.setAttribute("data-font",f);}catch(e){}`,
+          }}
+        />
       </head>
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>

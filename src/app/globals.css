@@ -1,8 +1,94 @@
 @import "tailwindcss";
 
+/* ===== 시스템 UI 폰트 =====
+ * 여기서 정하는 폰트는 앱 화면(사이드바/버튼/목록 등)에만 적용된다.
+ * 메일 본문에는 절대 번지면 안 된다 — 아래 "메일 본문 폰트 격리" 참고.
+ */
+@font-face {
+  font-family: 'LineSeed';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/LINESeedKR-Th.woff2') format('woff2');
+  font-weight: 100;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LineSeed';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/LINESeedKR-Rg.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'LineSeed';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_11-01@1.0/LINESeedKR-Bd.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Thin.woff2') format('woff2');
+  font-weight: 100;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-ExtraLight.woff2') format('woff2');
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-ExtraBold.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pretendard';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/pretendard@1.0/Pretendard-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 메일 본문이 폰트 없이 렌더될 때 쓰는 기본값 — 시스템 폰트와 무관하게 고정 */
+  --font-mail-fallback: Arial, Helvetica, sans-serif;
+  --font-ui: 'Pretendard', var(--font-mail-fallback);
+}
+
+/* 설정 페이지에서 고른 값이 <html data-font="..."> 로 반영된다 (lib/ui-prefs.ts) */
+:root[data-font="lineseed"] {
+  --font-ui: 'LineSeed', var(--font-mail-fallback);
 }
 
 @theme inline {
@@ -22,7 +108,60 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-ui);
+}
+
+/* ===== 메일 본문 폰트 격리 =====
+ * 받은/보낸 메일 HTML은 <iframe srcDoc>으로 별도 문서에 그려지므로 이 스타일시트가
+ * 아예 닿지 않는다 (구조적으로 안전, 여기서 할 일 없음).
+ * 다만 평문 메일 미리보기(<pre>)와 작성 에디터(Jodit)는 이 문서 안에 있어서 body의
+ * 폰트를 그대로 물려받는다 — 실제 수신자가 보게 될 모습(기본 폰트)과 어긋나지 않도록
+ * 명시적으로 되돌린다.
+ */
+.jodit-wysiwyg,
+.mail-plaintext {
+  font-family: var(--font-mail-fallback);
+}
+
+/* 목록 스켈레톤 — 가만히 있는 회색 막대보다 훑고 지나가는 하이라이트가 로딩임을 분명히 보여준다 */
+@keyframes mail-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.skeleton-bar {
+  border-radius: 9999px;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-zinc-200) 0%,
+    var(--color-zinc-100) 40%,
+    var(--color-zinc-50) 50%,
+    var(--color-zinc-100) 60%,
+    var(--color-zinc-200) 100%
+  );
+  background-size: 200% 100%;
+  animation: mail-shimmer 1.4s linear infinite;
+}
+
+@keyframes skeleton-row-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 위에서부터 차례로 나타나야 목록이 채워지는 느낌이 난다. 지연값만 인라인으로 준다. */
+.skeleton-row {
+  opacity: 0;
+  animation: skeleton-row-in 240ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+  }
+  .skeleton-row {
+    opacity: 1;
+    animation: none;
+  }
 }
 
 /* Jodit 에디터 본문 리스트/기본 스타일 복원 */

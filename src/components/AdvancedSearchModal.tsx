@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import type { AdvancedSearchOpts } from "@/lib/mail";
+import Spinner from "@/components/Spinner";
 
 interface Props {
   onClose: () => void;
   onSearch: (opts: AdvancedSearchOpts) => void;
+  searching: boolean;
+  error: string | null;
 }
 
 type Period = "all" | "1w" | "1m" | "3m" | "6m" | "1y" | "custom";
@@ -36,7 +39,7 @@ const PERIOD_LABELS: Record<Period, string> = {
   custom: "직접설정",
 };
 
-export default function AdvancedSearchModal({ onClose, onSearch }: Props) {
+export default function AdvancedSearchModal({ onClose, onSearch, searching, error }: Props) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [toScope, setToScope] = useState<"to_cc" | "to" | "cc">("to_cc");
@@ -75,17 +78,16 @@ export default function AdvancedSearchModal({ onClose, onSearch }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onClose}>
-      <form
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
-        className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-5 flex flex-col gap-3"
-      >
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-sm font-semibold text-zinc-900">상세검색</h2>
-          <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-600 text-sm">✕</button>
-        </div>
+    <form
+      onSubmit={handleSubmit}
+      className="absolute right-0 top-full mt-2 w-[min(440px,92vw)] bg-white border border-zinc-200 rounded-xl shadow-xl z-30 p-4 flex flex-col gap-3"
+    >
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-zinc-900">상세검색</h2>
+        <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-600 text-sm">✕</button>
+      </div>
 
+      <fieldset disabled={searching} className="contents">
         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2.5 items-center text-xs">
           <label className="text-zinc-500 justify-self-end">보낸사람</label>
           <input
@@ -187,23 +189,29 @@ export default function AdvancedSearchModal({ onClose, onSearch }: Props) {
             )}
           </div>
         </div>
+      </fieldset>
 
-        <div className="flex justify-end gap-2 mt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs px-4 py-2 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-          >
-            취소
-          </button>
-          <button
-            type="submit"
-            className="text-xs px-4 py-2 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-700"
-          >
-            검색
-          </button>
-        </div>
-      </form>
-    </div>
+      {error && <p className="text-xs text-red-500">검색 실패: {error}</p>}
+
+      <div className="flex items-center justify-end gap-2 mt-2">
+        {searching && <span className="text-xs text-zinc-400 mr-auto">검색 중...</span>}
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={searching}
+          className="text-xs px-4 py-2 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          취소
+        </button>
+        <button
+          type="submit"
+          disabled={searching}
+          className="text-xs px-4 py-2 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1.5"
+        >
+          {searching && <Spinner size={12} />}
+          {searching ? "검색 중..." : "검색"}
+        </button>
+      </div>
+    </form>
   );
 }

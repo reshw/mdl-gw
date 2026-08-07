@@ -1,20 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { getSignature, saveSignature } from "@/lib/settings";
 import { getIdToken } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { Eye, EyeOff, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
-import RichEditor from "@/components/RichEditor";
 import {
   subscribeRules, createRule, updateRule, deleteRule, applyRulesToAllMails,
   type MailRule, type RuleCondition, type RuleAction, type ConditionField, type ConditionOperator, type ActionType,
 } from "@/lib/rules";
 import { subscribeLabels, type Label } from "@/lib/labels";
+import { PAGE_SIZE_OPTIONS } from "@/lib/mail";
+import { getPageSize, setPageSize, getUiFont, setUiFont, UI_FONT_OPTIONS, type UiFont } from "@/lib/ui-prefs";
 
-type Tab = "signature" | "password" | "notifications" | "account" | "connection" | "rules";
+// 서명 탭에서만 쓰는 무거운 에디터라 다른 탭을 볼 때는 불러오지 않는다.
+const RichEditor = dynamic(() => import("@/components/RichEditor"), { ssr: false });
+
+const FONT_LABELS: Record<UiFont, string> = { lineseed: "라인시드", pretendard: "프리텐다드" };
+const FONT_STACKS: Record<UiFont, string> = {
+  lineseed: "'LineSeed', Arial, Helvetica, sans-serif",
+  pretendard: "'Pretendard', Arial, Helvetica, sans-serif",
+};
+
+type Tab = "signature" | "display" | "password" | "notifications" | "account" | "connection" | "rules";
 const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
 
 export default function SettingsPage() {
@@ -26,6 +37,8 @@ export default function SettingsPage() {
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pageSize, setPageSizeState] = useState<number>(PAGE_SIZE_OPTIONS[1]);
+  const [uiFont, setUiFontState] = useState<UiFont>("lineseed");
 
   // 계정 (personalEmail 변경)
   const [personalEmail, setPersonalEmail] = useState("");
@@ -126,6 +139,11 @@ export default function SettingsPage() {
     if (!user) return;
     getSignature().then(setSignature);
   }, [user]);
+
+  useEffect(() => {
+    setPageSizeState(getPageSize());
+    setUiFontState(getUiFont());
+  }, []);
 
   useEffect(() => {
     if (!mailEmail) return;
@@ -302,6 +320,12 @@ export default function SettingsPage() {
           메일 서명
         </button>
         <button
+          onClick={() => setTab("display")}
+          className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "display" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+        >
+          화면 표시
+        </button>
+        <button
           onClick={() => setTab("password")}
           className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "password" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
         >
@@ -357,6 +381,50 @@ export default function SettingsPage() {
                   {saving ? "저장 중..." : "저장"}
                 </button>
                 {saved && <span className="text-xs text-zinc-400">저장되었습니다.</span>}
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === "display" && (
+          <>
+            <h1 className="text-lg font-semibold text-zinc-900 mb-6">화면 표시</h1>
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-2xl mb-4">
+              <h2 className="text-sm font-medium text-zinc-900 mb-1">화면 폰트</h2>
+              <p className="text-xs text-zinc-400 mb-4">
+                메뉴·버튼 등 화면 글꼴만 바뀝니다. 메일 본문은 원래 폰트 그대로 표시됩니다.
+              </p>
+              <div className="flex gap-2 mb-4">
+                {UI_FONT_OPTIONS.map((font) => (
+                  <button
+                    key={font}
+                    onClick={() => { setUiFont(font); setUiFontState(font); }}
+                    className={`text-sm px-4 py-2 rounded-lg border ${uiFont === font ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}
+                  >
+                    {FONT_LABELS[font]}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 text-base text-zinc-800"
+                style={{ fontFamily: FONT_STACKS[uiFont] }}
+              >
+                가나다라 Hello 0123 — {FONT_LABELS[uiFont]} 미리보기
+              </div>
+            </section>
+            <section className="bg-white rounded-2xl border border-zinc-200 p-6 max-w-2xl">
+              <h2 className="text-sm font-medium text-zinc-900 mb-1">페이지당 메일 수</h2>
+              <p className="text-xs text-zinc-400 mb-4">메일함 목록 한 페이지에 표시할 메일 건수입니다. 이 기기에만 적용됩니다.</p>
+              <div className="flex gap-2">
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => { setPageSize(size); setPageSizeState(size); }}
+                    className={`text-sm px-4 py-2 rounded-lg border ${pageSize === size ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}
+                  >
+                    {size}개
+                  </button>
+                ))}
               </div>
             </section>
           </>
