@@ -9,12 +9,13 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
-  subscribeMailsFirstPage, loadMoreMails, fetchFolderSummary,
-  markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
+  subscribeMailsFirstPage, fetchMailsPage, fetchFolderSummary, fetchAllMailsForSearch,
+  searchMailsAdvanced, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
   subscribeTrash, moveToTrash, restoreFromTrash, permanentDelete,
   subscribeInboxUnread, getTrackingStatus,
-  type Mail, type Draft, type TrackingStatus, type MailListOpts,
+  type Mail, type Draft, type TrackingStatus, type MailListOpts, type AdvancedSearchOpts,
 } from "@/lib/mail";
+import AdvancedSearchModal from "@/components/AdvancedSearchModal";
 import {
   subscribeLabels, createLabel, updateLabel, deleteLabel, addLabelToMail, removeLabelFromMail,
   LABEL_COLORS, resolveLabelColor, type Label,
@@ -29,13 +30,21 @@ export default function MailPage() {
   const { user, loading, mailEmail, isAdmin, dbReady } = useAuth();
   const router = useRouter();
   const [mails, setMails] = useState<Mail[]>([]);
+  const [mailsLoaded, setMailsLoaded] = useState(false);
   const [mailsHasMore, setMailsHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const olderMailsRef = useRef<Mail[]>([]);
-  const hasOlderRef = useRef(false);
+  // 페이지네이션 — 1페이지는 실시간 구독(mails), 2페이지부터는 커서로 one-shot 조회
+  const [pageIndex, setPageIndex] = useState(1);
+  const [maxKnownPage, setMaxKnownPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
+  const [otherPageMails, setOtherPageMails] = useState<Mail[] | null>(null);
+  const [otherPageHasMore, setOtherPageHasMore] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [imapFolderList, setImapFolderList] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsLoaded, setDraftsLoaded] = useState(false);
   const [trashMails, setTrashMails] = useState<Mail[]>([]);
+  const [trashLoaded, setTrashLoaded] = useState(false);
   const [selected, setSelected] = useState<Mail | null>(null);
   const [composing, setComposing] = useState(false);
   const [editingDraft, setEditingDraft] = useState<Draft | undefined>(undefined);
@@ -45,6 +54,12 @@ export default function MailPage() {
   const [quickAdd, setQuickAdd] = useState<{ email: string; name: string; company: string } | null>(null);
   const [quickSaving, setQuickSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchCache, setSearchCache] = useState<Mail[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [advancedResults, setAdvancedResults] = useState<Mail[] | null>(null);
+  const [advancedSearching, setAdvancedSearching] = useState(false);
+  const [advancedError, setAdvancedError] = useState<string | null>(null);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [noLabelOnly, setNoLabelOnly] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
@@ -115,14 +130,24 @@ export default function MailPage() {
     return () => unsub();
   }, [mailEmail]);
 
+  const pageRequestIdRef = useRef(0);
+
   useEffect(() => {
     if (!mailEmail || !dbReady) return;
     setSelected(null);
     setSearchQuery("");
     setCheckedIds(new Set());
     setShowLabelDropdown(false);
-    olderMailsRef.current = [];
-    hasOlderRef.current = false;
+    setSearchCache(null);
+    setAdvancedResults(null);
+    setMailsLoaded(false);
+    setPageIndex(1);
+    setMaxKnownPage(1);
+    setPageCursors([null]);
+    setOtherPageMails(null);
+    setOtherPageHasMore(false);
+    setPageError(null);
+    pageRequestIdRef.current++;
     if (folder === "draft" || folder === "trash") {
       setMails([]);
       setMailsHasMore(false);
@@ -134,13 +159,19 @@ export default function MailPage() {
       labelId: activeLabel,
     };
     const unsub = subscribeMailsFirstPage(mailEmail, (firstPage, snapshotHasMore) => {
-      const seen = new Set(firstPage.map((m) => m.id));
-      const older = olderMailsRef.current.filter((m) => !seen.has(m.id));
-      setMails([...firstPage, ...older]);
-      if (!hasOlderRef.current) setMailsHasMore(snapshotHasMore);
+      setMails(firstPage);
+      setMailsHasMore(snapshotHasMore);
+      setMailsLoaded(true);
     }, opts);
     return () => unsub();
   }, [user, folder, dbReady, activeImapFolder, activeLabel]);
+
+  // 1페이지(mails)가 갱신될 때마다 2페이지로 넘어갈 때 쓸 커서를 최신으로 유지
+  useEffect(() => {
+    if (!mailsLoaded) return;
+    const cursor = mails.length > 0 ? mails[mails.length - 1].createdAt : null;
+    setPageCursors((prev) => (prev[0] === cursor ? prev : [cursor, ...prev.slice(1)]));
+  }, [mails, mailsLoaded]);
 
   // IMAP 폴더 사이드바 — 세션당 한 번만 fetch
   useEffect(() => {
@@ -150,38 +181,91 @@ export default function MailPage() {
       .catch((e) => console.error("Failed to fetch folder summary:", e));
   }, [mailEmail, dbReady]);
 
-  async function handleLoadMore() {
-    if (loadingMore || !mailsHasMore) return;
-    const last = mails[mails.length - 1];
-    if (!last) return;
-    setLoadingMore(true);
+  async function goToPage(n: number) {
+    if (pageLoading || n === pageIndex || n < 1) return;
+    if (n === 1) {
+      setPageIndex(1);
+      setPageError(null);
+      return;
+    }
+    const cursor = pageCursors[n - 2];
+    if (cursor === undefined) return; // 아직 커서를 모르는(방문한 적 없는) 페이지
+    const requestId = ++pageRequestIdRef.current;
+    setPageLoading(true);
+    setPageError(null);
     try {
       const opts: MailListOpts = {
         folder: folder as "inbox" | "sent",
         imapFolder: activeImapFolder,
         labelId: activeLabel,
       };
-      const result = await loadMoreMails(mailEmail!, opts, last.createdAt);
-      olderMailsRef.current = [...olderMailsRef.current, ...result.mails];
-      hasOlderRef.current = true;
-      setMails((prev) => [...prev, ...result.mails]);
-      setMailsHasMore(result.hasMore);
+      const result = await fetchMailsPage(mailEmail!, opts, cursor);
+      if (pageRequestIdRef.current !== requestId) return; // 그 사이 폴더/페이지가 바뀜
+      setOtherPageMails(result.mails);
+      setOtherPageHasMore(result.hasMore);
+      setPageIndex(n);
+      setMaxKnownPage((p) => Math.max(p, n));
+      setPageCursors((prev) => {
+        const next = [...prev];
+        next[n - 1] = result.mails.length > 0 ? result.mails[result.mails.length - 1].createdAt : cursor;
+        return next;
+      });
     } catch (e) {
-      console.error("Failed to load more mails:", e);
+      console.error("Failed to load page:", e);
+      if (pageRequestIdRef.current === requestId) setPageError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingMore(false);
+      if (pageRequestIdRef.current === requestId) setPageLoading(false);
+    }
+  }
+
+  // 검색어가 있으면 지금까지 로드된 페이지가 아니라 폴더 전체에서 검색해야 한다
+  useEffect(() => {
+    if (!mailEmail || !dbReady) return;
+    if (folder === "draft" || folder === "trash") return;
+    if (!searchQuery.trim() || searchCache !== null) return;
+    setSearching(true);
+    const opts: MailListOpts = {
+      folder: folder as "inbox" | "sent",
+      imapFolder: activeImapFolder,
+      labelId: activeLabel,
+    };
+    fetchAllMailsForSearch(mailEmail, opts)
+      .then(setSearchCache)
+      .catch((e) => console.error("Failed to search mails:", e))
+      .finally(() => setSearching(false));
+  }, [searchQuery, folder, activeImapFolder, activeLabel, mailEmail, dbReady, searchCache]);
+
+  async function handleAdvancedSearch(adv: AdvancedSearchOpts) {
+    if (!mailEmail) return;
+    setSearchQuery("");
+    setShowAdvancedSearch(false);
+    setAdvancedSearching(true);
+    setAdvancedError(null);
+    try {
+      const opts: MailListOpts = {
+        folder: folder as "inbox" | "sent",
+        imapFolder: activeImapFolder,
+        labelId: activeLabel,
+      };
+      const results = await searchMailsAdvanced(mailEmail, opts, adv);
+      setAdvancedResults(results);
+    } catch (e) {
+      console.error("Failed to run advanced search:", e);
+      setAdvancedError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdvancedSearching(false);
     }
   }
 
   useEffect(() => {
     if (!mailEmail || !dbReady) return;
-    const unsub = subscribeDrafts(mailEmail, setDrafts);
+    const unsub = subscribeDrafts(mailEmail, (d) => { setDrafts(d); setDraftsLoaded(true); });
     return () => unsub();
   }, [user, dbReady]);
 
   useEffect(() => {
     if (!mailEmail || !dbReady) return;
-    const unsub = subscribeTrash(mailEmail, setTrashMails);
+    const unsub = subscribeTrash(mailEmail, (t) => { setTrashMails(t); setTrashLoaded(true); });
     return () => unsub();
   }, [user, dbReady]);
 
@@ -626,9 +710,24 @@ export default function MailPage() {
     trash: "휴지통",
   };
 
-  const currentMails = folder === "trash" ? trashMails : mails;
-
   const q = searchQuery.trim().toLowerCase();
+  const pageMails = pageIndex === 1 ? mails : (otherPageMails ?? []);
+  const pageHasMore = pageIndex === 1 ? mailsHasMore : otherPageHasMore;
+  const pageLoaded = pageIndex === 1 ? mailsLoaded : otherPageMails !== null;
+  // 상세검색 > 기본검색 > 페이지 순으로 무엇을 보여줄지 정한다.
+  // 검색 중엔 로드된 페이지가 아니라 폴더 전체(searchCache)에서 걸러야 한다.
+  // 캐시가 아직 로딩 중이면 임시로 로드된 페이지만 보여준다.
+  const currentMails = folder === "trash"
+    ? trashMails
+    : advancedResults !== null
+      ? advancedResults
+      : (q && searchCache ? searchCache : pageMails);
+  const listLoaded = folder === "trash"
+    ? trashLoaded
+    : advancedResults !== null
+      ? !advancedSearching
+      : (pageLoaded && !(q && searching));
+
   const filteredMails = q
     ? currentMails.filter((m) =>
         m.subject.toLowerCase().includes(q) ||
@@ -927,10 +1026,21 @@ export default function MailPage() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setAdvancedResults(null); }}
               placeholder="검색 (보낸사람, 제목, 내용)"
               className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
             />
+            {q && searching && (
+              <span className="text-xs text-zinc-400 shrink-0">전체 검색 중...</span>
+            )}
+            {(folder === "inbox" || folder === "sent") && (
+              <button
+                onClick={() => setShowAdvancedSearch(true)}
+                className="text-xs px-2 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50 shrink-0"
+              >
+                상세검색
+              </button>
+            )}
             {folder !== "draft" && (
               <div className="relative shrink-0" ref={filterDropdownRef}>
                 <button
@@ -967,9 +1077,24 @@ export default function MailPage() {
           </div>
         )}
 
+        {advancedSearching && (
+          <div className="px-3 py-2 border-b border-zinc-100 text-xs text-zinc-400">상세검색 중...</div>
+        )}
+        {advancedError && (
+          <div className="px-3 py-2 border-b border-zinc-100 text-xs text-red-500">상세검색 실패: {advancedError}</div>
+        )}
+        {advancedResults !== null && !advancedSearching && (
+          <div className="px-3 py-2 border-b border-zinc-100 bg-zinc-50 flex items-center justify-between">
+            <span className="text-xs text-zinc-500">상세검색 결과 {advancedResults.length}건</span>
+            <button onClick={() => setAdvancedResults(null)} className="text-xs text-zinc-400 hover:text-zinc-600">검색 초기화</button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto">
           {folder === "draft" ? (
-            filteredDrafts.length === 0 ? (
+            !draftsLoaded ? (
+              <div className="flex items-center justify-center h-32 text-sm text-zinc-400">불러오는 중...</div>
+            ) : filteredDrafts.length === 0 ? (
               <div className="flex items-center justify-center h-32 text-sm text-zinc-400">{q ? "검색 결과가 없습니다." : "임시저장된 메일이 없습니다."}</div>
             ) : (
               filteredDrafts.map((draft) => (
@@ -995,9 +1120,11 @@ export default function MailPage() {
                 </div>
               ))
             )
+          ) : !listLoaded ? (
+            <div className="flex items-center justify-center h-32 text-sm text-zinc-400">불러오는 중...</div>
           ) : displayedMails.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-zinc-400">
-              {q ? "검색 결과가 없습니다." : activeLabel ? "이 라벨의 메일이 없습니다." : { inbox: "받은 메일이 없습니다.", sent: "보낸 메일이 없습니다.", trash: "휴지통이 비어있습니다.", draft: "" }[folder]}
+              {advancedResults !== null ? "상세검색 결과가 없습니다." : q ? "검색 결과가 없습니다." : activeLabel ? "이 라벨의 메일이 없습니다." : { inbox: "받은 메일이 없습니다.", sent: "보낸 메일이 없습니다.", trash: "휴지통이 비어있습니다.", draft: "" }[folder]}
             </div>
           ) : (
             <>
@@ -1063,15 +1190,51 @@ export default function MailPage() {
                 </div>
               );
             })}
-            {mailsHasMore && (
-              <div className="p-3 flex justify-center">
-                <button
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  className="text-xs px-3 py-1.5 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
-                >
-                  {loadingMore ? "로딩 중..." : "더 보기"}
-                </button>
+            {!q && advancedResults === null && folder !== "trash" && (pageHasMore || maxKnownPage > 1) && (
+              <div className="p-3 flex flex-col items-center gap-1.5">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => goToPage(pageIndex - 1)}
+                    disabled={pageIndex === 1 || pageLoading}
+                    className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
+                  >
+                    ‹ 이전
+                  </button>
+                  {Array.from({ length: maxKnownPage }, (_, i) => i + 1)
+                    .filter((n) => n === 1 || n === maxKnownPage || Math.abs(n - pageIndex) <= 2)
+                    .reduce<number[]>((acc, n) => {
+                      if (acc.length > 0 && n - acc[acc.length - 1] > 1) acc.push(-1);
+                      acc.push(n);
+                      return acc;
+                    }, [])
+                    .map((n, idx) =>
+                      n === -1 ? (
+                        <span key={`ellipsis-${idx}`} className="text-xs text-zinc-300 px-1">···</span>
+                      ) : (
+                        <button
+                          key={n}
+                          onClick={() => goToPage(n)}
+                          disabled={pageLoading}
+                          className={`text-xs w-7 h-7 rounded border disabled:opacity-40 ${n === pageIndex ? "bg-zinc-900 text-white border-zinc-900" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}
+                        >
+                          {n}
+                        </button>
+                      )
+                    )}
+                  <button
+                    onClick={() => goToPage(pageIndex + 1)}
+                    disabled={!pageHasMore || pageLoading}
+                    className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
+                  >
+                    다음 ›
+                  </button>
+                </div>
+                {pageLoading && <span className="text-xs text-zinc-400">불러오는 중...</span>}
+                {pageError && (
+                  <span className="text-xs text-red-500 text-center max-w-xs">
+                    불러오기 실패: {pageError}
+                  </span>
+                )}
               </div>
             )}
             </>
@@ -1398,6 +1561,13 @@ export default function MailPage() {
       </main>
 
       {composing && <ComposeModal onClose={handleComposeClose} draft={editingDraft} init={composeInit} mailEmail={mailEmail} />}
+
+      {showAdvancedSearch && (
+        <AdvancedSearchModal
+          onClose={() => setShowAdvancedSearch(false)}
+          onSearch={handleAdvancedSearch}
+        />
+      )}
 
       {/* 라벨 ··· 컨텍스트 메뉴 (fixed — 사이드바 overflow 탈출) */}
       {labelMenuId && labelMenuPos && (() => {

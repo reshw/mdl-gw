@@ -109,18 +109,19 @@ export function subscribeMailsFirstPage(
   });
 }
 
-// "더 보기" — 옛날 메일은 one-shot 페치 (실시간 갱신 불필요)
-export async function loadMoreMails(
+// 페이지 단위 조회. cursor=null이면 1페이지, 아니면 그 cursor(직전 페이지 마지막 메일의
+// createdAt) 다음부터 한 페이지를 one-shot으로 가져온다. "더보기" 누적 대신 페이지 이동에 쓴다.
+export async function fetchMailsPage(
   email: string,
   opts: MailListOpts,
-  afterCreatedAt: string
+  cursor: string | null
 ): Promise<{ mails: Mail[]; hasMore: boolean }> {
   const pageSize = opts.pageSize ?? DEFAULT_PAGE_SIZE;
   const q = query(
     mailsCollection(email),
     ...buildBaseConstraints(email, opts),
     orderBy("createdAt", "desc"),
-    startAfter(afterCreatedAt),
+    ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize + 1)
   );
   const snap = await getDocs(q);
@@ -132,6 +133,79 @@ export async function loadMoreMails(
     opts
   );
   return { mails, hasMore };
+}
+
+// 검색용 — 로드된 페이지에 갇히지 않도록 폴더/라벨 조건에 맞는 전체 메일을 한 번에 페치
+export async function fetchAllMailsForSearch(
+  email: string,
+  opts: MailListOpts
+): Promise<Mail[]> {
+  const q = query(
+    mailsCollection(email),
+    ...buildBaseConstraints(email, opts),
+    orderBy("createdAt", "desc")
+  );
+  const snap = await getDocs(q);
+  return postFilter(
+    snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mail)),
+    opts
+  );
+}
+
+export interface AdvancedSearchOpts {
+  from?: string;
+  to?: string;
+  toScope?: "to" | "cc" | "to_cc";
+  subject?: string;
+  contentScope?: "subject" | "subject_content";
+  hasAttachment?: "all" | "yes" | "no";
+  dateFrom?: string;
+  dateTo?: string;
+  includeSubfolders?: boolean;
+}
+
+// 상세검색 — Firestore는 부분일치 검색을 지원하지 않으므로 조건에 맞는 전체 메일을
+// 한 번에 페치한 뒤 클라이언트에서 필터링한다. 하위 폴더 포함 시 imapFolder 조건을 뺀다.
+export async function searchMailsAdvanced(
+  email: string,
+  baseOpts: MailListOpts,
+  adv: AdvancedSearchOpts
+): Promise<Mail[]> {
+  const opts: MailListOpts = adv.includeSubfolders
+    ? { ...baseOpts, imapFolder: null }
+    : baseOpts;
+  const all = await fetchAllMailsForSearch(email, opts);
+
+  const from = adv.from?.trim().toLowerCase();
+  const to = adv.to?.trim().toLowerCase();
+  const subject = adv.subject?.trim().toLowerCase();
+  const dateFrom = adv.dateFrom ? new Date(adv.dateFrom).getTime() : null;
+  // 종료일은 그 날짜의 끝(23:59:59.999)까지 포함해야 "8/7까지"가 8/7 메일을 놓치지 않는다.
+  const dateTo = adv.dateTo ? new Date(adv.dateTo).getTime() + 24 * 60 * 60 * 1000 - 1 : null;
+
+  return all.filter((m) => {
+    if (from && !m.from.toLowerCase().includes(from)) return false;
+    if (to) {
+      const scope = adv.toScope ?? "to_cc";
+      const targets: string[] = [];
+      if (scope === "to" || scope === "to_cc") targets.push(m.to ?? "");
+      if (scope === "cc" || scope === "to_cc") targets.push(m.cc ?? "");
+      if (!targets.some((t) => t.toLowerCase().includes(to))) return false;
+    }
+    if (subject) {
+      const scope = adv.contentScope ?? "subject";
+      const haystack = scope === "subject_content" ? `${m.subject} ${m.text ?? ""}` : m.subject;
+      if (!haystack.toLowerCase().includes(subject)) return false;
+    }
+    if (adv.hasAttachment === "yes" && !m.attachments?.length) return false;
+    if (adv.hasAttachment === "no" && m.attachments?.length) return false;
+    if (dateFrom !== null || dateTo !== null) {
+      const t = new Date(m.date || m.createdAt).getTime();
+      if (dateFrom !== null && t < dateFrom) return false;
+      if (dateTo !== null && t > dateTo) return false;
+    }
+    return true;
+  });
 }
 
 // IMAP 폴더 사이드바용 — deliveredTo 전체에서 폴더 set 추출. 세션당 한 번만 호출.

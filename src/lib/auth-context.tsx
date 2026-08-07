@@ -57,29 +57,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (USE_SMTP && mail) {
           try {
             const token = await u.getIdToken();
-            // isAdmin: 커스텀 클레임 우선, 없으면 Firestore members 확인
-            if (result.claims.isAdmin === true) {
-              setIsAdmin(true);
-            } else {
-              const adminRes = await fetch("/api/auth/check-admin", {
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              if (adminRes.ok) {
-                const { isAdmin } = await adminRes.json();
-                setIsAdmin(isAdmin === true);
-              }
-            }
-            const res = await fetch("/api/tenant-firebase", {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) {
-              const config = await res.json();
-              if (config.projectId === process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+            // isAdmin 확인과 테넌트 Firebase 설정 조회는 서로 무관하니 병렬로 — 순차로 하면
+            // 로그인할 때마다 왕복이 두 번 더 걸려서 메일함이 뜨는 게 눈에 띄게 느려진다.
+            const [isAdminResult, tenantConfig] = await Promise.all([
+              result.claims.isAdmin === true
+                ? Promise.resolve(true)
+                : fetch("/api/auth/check-admin", { headers: { Authorization: `Bearer ${token}` } })
+                    .then((r) => (r.ok ? r.json() : { isAdmin: false }))
+                    .then((d) => d.isAdmin === true)
+                    .catch(() => false),
+              fetch("/api/tenant-firebase", { headers: { Authorization: `Bearer ${token}` } })
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null),
+            ]);
+            setIsAdmin(isAdminResult);
+            if (tenantConfig) {
+              if (tenantConfig.projectId === process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
                 setPersonalDb(db);
               } else {
                 const appName = `personal-${mail}`;
                 const existing = getApps().find((a) => a.name === appName);
-                personalApp = existing ?? initializeApp(config, appName);
+                personalApp = existing ?? initializeApp(tenantConfig, appName);
                 setPersonalDb(getFirestore(personalApp));
               }
             }
