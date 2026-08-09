@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
-  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  const encodedKey = key.split("/").map(awsUriEscape).join("/");
   const url = `${R2_ENDPOINT}/${R2_BUCKET}/${encodedKey}`;
 
   const datetime = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "").slice(0, 15) + "Z";
@@ -66,6 +66,13 @@ export async function GET(req: NextRequest) {
       "Cache-Control": "private, max-age=3600",
     },
   });
+}
+
+// encodeURIComponent는 !'()* 를 안전 문자로 보고 그대로 두지만, AWS SigV4 정규 URI 규칙은
+// 이 문자들도 퍼센트 인코딩해야 한다. 안 맞추면 R2가 자체 계산한 서명과 어긋나 파일명에
+// 괄호 등이 든 첨부에서만 SignatureDoesNotMatch가 난다.
+function awsUriEscape(str: string): string {
+  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
 async function sha256Hex(data: string): Promise<string> {

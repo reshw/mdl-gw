@@ -34,12 +34,19 @@ async function deriveSigningKey(secret: string, date: string): Promise<ArrayBuff
   return hmacRaw(kService, "aws4_request");
 }
 
+// encodeURIComponent는 !'()* 를 안전 문자로 보고 그대로 두지만, AWS SigV4 정규 URI 규칙은
+// 이 문자들도 퍼센트 인코딩해야 한다. 안 맞추면 R2가 자체 계산한 서명과 어긋나 파일명에
+// 괄호 등이 든 첨부에서만 SignatureDoesNotMatch가 난다.
+function awsUriEscape(str: string): string {
+  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
 async function uploadToR2(key: string, body: Uint8Array, contentType: string, bucket: string = R2_BUCKET): Promise<void> {
   const data = new Uint8Array(body);
   const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
 
-  const encodedPath = `/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const encodedPath = `/${bucket}/${key.split("/").map(awsUriEscape).join("/")}`;
   const url = `${R2_ENDPOINT}${encodedPath}`;
   const datetime = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const date = datetime.slice(0, 8);

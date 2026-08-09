@@ -50,6 +50,7 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const draftIdRef = useRef<string | undefined>(draft?.id);
   const isDirtyRef = useRef(false);
@@ -108,6 +109,33 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
     }).finally(() => setFetchingAttachments(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function addFiles(list: FileList | File[]) {
+    const picked = Array.from(list);
+    if (picked.length) setFiles((prev) => [...prev, ...picked]);
+  }
+
+  // 자식 요소 개수를 세는 카운터 방식은 Jodit처럼 드래그 도중 내부 DOM이 바뀌는 자식 위에서
+  // enter/leave 짝이 어긋나 오버레이가 안 꺼지는 문제가 있었다. relatedTarget(마우스가 다음에
+  // 들어가는 요소)이 컨테이너 밖일 때만 꺼지도록 하면 DOM 변화와 무관하게 정확하다.
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes("Files")) return;
+    setIsDragging(true);
+  }
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    const next = e.relatedTarget as Node | null;
+    if (!next || !e.currentTarget.contains(next)) setIsDragging(false);
+  }
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+  }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    addFiles(e.dataTransfer.files);
+  }
 
   useEffect(() => { isDirtyRef.current = true; }, [to, cc, bcc, subject, html]);
 
@@ -198,7 +226,7 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-end justify-end p-0 lg:p-6 z-50">
-      <div className="w-full max-w-2xl bg-white rounded-t-2xl lg:rounded-2xl shadow-xl flex flex-col h-[90dvh] lg:h-[620px]">
+      <div className="relative w-full max-w-2xl bg-white rounded-t-2xl lg:rounded-2xl shadow-xl flex flex-col h-[90dvh] lg:h-[620px]">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200">
           <span className="text-sm font-medium text-zinc-900">새 메일</span>
@@ -247,17 +275,27 @@ export default function ComposeModal({ onClose, draft, init, mailEmail }: Props)
           <RichEditor value={html} onChange={setHtml} />
         </div>
 
-        {/* 첨부파일 */}
+        {/* 첨부파일 — 에디터와 겹치지 않는 별도 한 줄짜리 드롭 영역 */}
         <div className="px-4 py-2 border-t border-zinc-100">
-          <label className="cursor-pointer text-xs text-zinc-900 hover:text-zinc-600">
-            📎 파일 첨부
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])])}
-            />
-          </label>
+          <div
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`flex items-center gap-2 rounded-lg border border-dashed px-3 py-1.5 transition-colors ${isDragging ? "border-zinc-400 bg-zinc-50" : "border-zinc-200"}`}
+          >
+            <span className="text-xs font-semibold text-zinc-900 shrink-0">파일첨부</span>
+            <span className="flex-1 text-xs text-zinc-400">여기에 파일을 끌어다 놓으세요</span>
+            <label className="cursor-pointer shrink-0 rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50">
+              직접 첨부
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+              />
+            </label>
+          </div>
           {(fetchingAttachments || files.length > 0 || missingAttachmentNames.length > 0) && (
             <div className="flex flex-wrap gap-1 mt-1">
               {fetchingAttachments && (
