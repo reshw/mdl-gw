@@ -55,6 +55,9 @@ export interface Mail {
   labels?: string[];
   folder?: string;
   type?: "sent";
+  /** 같은 테넌트 내부 발송 시 수신자 몫으로 직접 써지는 문서에 붙는다(from은 여전히 발신자).
+   *  발신자 세션에서 "내 sent 문서"와 구분하는 유일한 표식이다. */
+  deliveredTo?: string;
 }
 
 export interface MailListOpts {
@@ -113,7 +116,12 @@ export function subscribeAllMails(
   );
   const unsub2 = onSnapshot(
     query(mailsCollection(email), where("from", "==", email)),
-    (snap) => { sent = toMails(snap); emit(); },
+    (snap) => {
+      // from만으로는 부족하다 — 내부 발송 시 상대방 받은편지함용으로 직접 써지는 문서도
+      // from이 나라서 같이 걸려온다. deliveredTo가 남이면 그건 내 게 아니라 상대방 것이다.
+      sent = toMails(snap).filter((m) => !m.deliveredTo || m.deliveredTo === email);
+      emit();
+    },
     fail
   );
 
