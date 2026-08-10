@@ -51,6 +51,9 @@ export interface Mail {
   failReason?: string;
   trash?: boolean;
   firstReadAt?: string;
+  /** 열람 추적 id — 메일당 하나. 수신자 구분은 픽셀 URL의 주소로 한다. */
+  trackId?: string;
+  /** 옛 방식(수신자별 id 맵). 과거에 보낸 메일에만 남아 있다 — [[getTrackingStatus]] 참고. */
   trackIds?: Record<string, string>;
   labels?: string[];
   folder?: string;
@@ -295,19 +298,37 @@ export async function deleteDraft(draftId: string) {
 }
 
 export interface TrackingStatus {
-  recipient: string;
-  sentAt: string;
   openedAt: string | null;
 }
 
-export async function getTrackingStatus(trackIds: Record<string, string>): Promise<Record<string, TrackingStatus>> {
+/** 이 메일이 수신자별 열람 추적을 갖고 있는지. 없으면 화면에 확인 표시를 띄우지 않는다. */
+export function isTrackable(mail: Mail, recipient: string): boolean {
+  // 새 방식은 메일당 id 하나로 전원(참조 포함)을 추적한다.
+  if (mail.trackId) return true;
+  // 옛 방식은 발송 시 등록해 둔 수신자만 추적된다 — 외부 참조자는 등록 자체가 없었다.
+  return !!mail.trackIds?.[recipient];
+}
+
+// 반환값은 "연 사람"만 담는다. 열지 않은 수신자는 키가 없다.
+export async function getTrackingStatus(mail: Mail): Promise<Record<string, TrackingStatus>> {
   const result: Record<string, TrackingStatus> = {};
+
+  // 새 방식: 메일당 문서 하나에 수신자별 열람이 누적돼 있어 한 번만 읽으면 된다.
+  if (mail.trackId) {
+    const snap = await getDoc(doc(getPersonalDb(), "tracking", mail.trackId));
+    const opens = (snap.data()?.opens ?? {}) as Record<string, { openedAt?: string }>;
+    for (const [recipient, open] of Object.entries(opens)) {
+      if (open?.openedAt) result[recipient] = { openedAt: open.openedAt };
+    }
+    return result;
+  }
+
+  // 옛 방식: 수신자마다 문서가 따로 있어 사람 수만큼 읽어야 한다. 과거 메일 전용 경로다.
   await Promise.all(
-    Object.entries(trackIds).map(async ([recipient, trackId]) => {
+    Object.entries(mail.trackIds ?? {}).map(async ([recipient, trackId]) => {
       const snap = await getDoc(doc(getPersonalDb(), "tracking", trackId));
-      if (snap.exists()) {
-        result[recipient] = snap.data() as TrackingStatus;
-      }
+      const openedAt = snap.data()?.openedAt;
+      if (openedAt) result[recipient] = { openedAt };
     })
   );
   return result;
@@ -324,7 +345,7 @@ export async function saveSentMail(data: {
   attachmentNames: string[];
   failed?: boolean;
   failReason?: string;
-  trackIds?: Record<string, string>;
+  trackId?: string;
 }) {
   await addDoc(collection(getPersonalDb(), "mails"), {
     to: data.to,
@@ -340,6 +361,6 @@ export async function saveSentMail(data: {
     attachments: data.attachmentNames.map((name) => ({ name })),
     createdAt: new Date().toISOString(),
     ...(data.failed ? { failed: true, failReason: data.failReason ?? "" } : {}),
-    ...(data.trackIds ? { trackIds: data.trackIds } : {}),
+    ...(data.trackId ? { trackId: data.trackId } : {}),
   });
 }

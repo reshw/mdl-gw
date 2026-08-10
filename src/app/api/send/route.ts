@@ -115,6 +115,14 @@ async function uploadAttachmentsForRecipient(
   return results.filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
+// 수신자는 "표시이름 <addr@example.com>" 형태로도 들어온다(연락처에 이름이 있으면 UI가 이렇게
+// 만든다). 이 문자열은 ">"로 끝나므로 그대로 도메인을 검사하면 내부 주소가 외부로 분류돼
+// Resend를 타고 나갔다가 수신 워커에 다시 저장돼 중복된다. 판정·저장 키는 항상 순수 주소로 한다.
+function bareAddress(raw: string): string {
+  const match = raw.match(/^"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  return (match ? match[2] : raw).trim();
+}
+
 export async function POST(req: NextRequest) {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "인증 필요" }, { status: 401 });
@@ -166,7 +174,9 @@ export async function POST(req: NextRequest) {
     const baseUrl = `${proto}://${host}`;
 
     const sentAt = new Date().toISOString();
-    const trackIds: Record<string, string> = {};
+    // 열람 추적 id는 메일당 하나뿐이다. 누가 열었는지는 픽셀 URL에 실린 주소로 구분하므로
+    // 수신자별 id를 만들어 미리 등록해 둘 필요가 없다 — 문서는 열람이 일어날 때 생긴다.
+    const trackId = crypto.randomUUID();
     // 수신자별 발송 실패를 모았다가 마지막에 한 번에 보고한다. 첫 실패로 중단하면
     // 나머지 수신자에게 보낼 기회를 잃는다.
     const sendFailures: string[] = [];
@@ -182,7 +192,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "SMTP 설정이 없습니다. 설정 → 연결 설정에서 입력해주세요." }, { status: 400 });
       }
 
-      const trackId = crypto.randomUUID();
       const jobId = crypto.randomUUID();
       const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
       const trackedHtml = (html ?? text ?? "") + pixel;
@@ -226,102 +235,82 @@ export async function POST(req: NextRequest) {
         status: "pending",
         createdAt: sentAt,
       });
-
-      trackIds[toStr] = trackId;
     } else {
-      // ── Resend 모드 (기존 로직 유지) ───────────────────────
-      for (const recipient of toList) {
-        const trackId = crypto.randomUUID();
-        trackIds[recipient] = trackId;
+      // ── Resend 모드 ───────────────────────────────────────
+      // 수신자마다 픽셀 URL이 달라야 누가 열었는지 구분되므로, 사본도 수신자별로 만든다.
+      const pixel = (addr: string) =>
+        `<img src="${baseUrl}/api/track?id=${trackId}&addr=${encodeURIComponent(addr)}" width="1" height="1" style="display:none;border:0;" alt="" />`;
 
-        const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
-        const trackedHtml = (html ?? text ?? "") + pixel;
+      // 사본을 쪼개 보낸다는 사실이 수신자에게 드러나면 안 된다. 실제 배달 주소와 무관하게
+      // 편지에 보이는 받는사람/참조는 항상 원본 그대로 유지한다.
+      const visibleHeaders: Record<string, string> = { To: toStr };
+      if (ccStr) visibleHeaders.Cc = ccStr;
 
-        await adminDb.collection("tracking").doc(trackId).set({
-          recipient,
-          sentAt,
-          openedAt: null,
-        });
+      const resendAttachments = (attachments ?? []).map((a: { filename?: string; content?: string }) => ({
+        filename: a.filename,
+        content: a.content ? Buffer.from(a.content, "base64") : undefined,
+      }));
 
-        if (recipient.endsWith(`@${MAIL_DOMAIN}`)) {
-          // 내부 메일: Resend 우회, Firestore에 직접 저장
-          const mailId = crypto.randomUUID();
-          const attachmentMeta = attachments?.length
-            ? await uploadAttachmentsForRecipient(recipient, mailId, attachments)
-            : [];
-          await adminDb.collection("mails").doc(mailId).set({
-            id: mailId,
-            // 실제 수신자가 보는 것과 같게 To/Cc 전체를 남긴다. 폴더 분류는 deliveredTo가 담당.
-            to: toStr,
-            ...(ccStr ? { cc: ccStr } : {}),
-            from: fromEmail,
-            subject,
-            text: text ?? "",
-            html: trackedHtml,
-            date: sentAt,
-            read: false,
-            attachments: attachmentMeta,
-            createdAt: sentAt,
-            deliveredTo: recipient,
-          });
-          notify(recipient, { from: fromEmail, subject, date: sentAt, mailId, text }).catch(() => {});
-        } else {
-          // CC/BCC에서 내부 주소 제거 — Resend가 @mdl.kr로 SMTP 발송하면 mailer-worker가 중복 저장함
-          const externalCcList = ccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-          const externalBccList = bccList.filter((c) => !c.endsWith(`@${MAIL_DOMAIN}`));
-
-          // cc/bcc는 반드시 배열로 넘긴다. 쉼표로 이어붙인 문자열은 주소가 2개 이상일 때
-          // Resend가 단일 주소로 파싱하려다 요청 전체를 거부한다.
-          const { error: sendError } = await resend!.emails.send({
-            from,
-            to: [recipient],
-            headers: toList.length > 1 ? { "To": toStr } : undefined,
-            ...(externalCcList.length > 0 ? { cc: externalCcList } : {}),
-            ...(externalBccList.length > 0 ? { bcc: externalBccList } : {}),
-            subject,
-            text: text ?? "",
-            html: trackedHtml,
-            attachments: (attachments ?? []).map((a: { filename?: string; content?: string; content_type?: string }) => ({
-              filename: a.filename,
-              content: a.content ? Buffer.from(a.content, "base64") : undefined,
-            })),
-          });
-
-          // Resend SDK는 API 오류를 throw하지 않고 error로 반환한다. 확인하지 않으면
-          // 발송이 거부돼도 성공 응답이 나가고 보낸편지함에만 기록이 남는다.
-          if (sendError) {
-            sendFailures.push(`${recipient}: ${sendError.message ?? String(sendError)}`);
-          }
-        }
-      }
-
-      // CC 중 내부 도메인 수신자도 내부 직접 저장
-      for (const ccRecipient of ccList) {
-        if (!ccRecipient.endsWith(`@${MAIL_DOMAIN}`)) continue;
-        const trackId = crypto.randomUUID();
-        trackIds[ccRecipient] = trackId;
-        const pixel = `<img src="${baseUrl}/api/track?id=${trackId}" width="1" height="1" style="display:none;border:0;" alt="" />`;
-        const trackedHtml = (html ?? text ?? "") + pixel;
-        await adminDb.collection("tracking").doc(trackId).set({ recipient: ccRecipient, sentAt, openedAt: null });
+      // 내부 주소는 Resend를 거치지 않고 수신자 받은편지함에 직접 넣는다. Resend로 @도메인에
+      // 보내면 수신 워커가 같은 메일을 한 번 더 저장해 중복된다.
+      // addr는 순수 주소(받은편지함 조회·알림·첨부 키용), recipient는 원본 문자열
+      // (픽셀 addr= 값 — 보낸편지함 UI가 mail.to를 쪼개 만든 키와 같아야 열람 표시가 붙는다).
+      const deliverInternal = async (addr: string, recipient: string) => {
         const mailId = crypto.randomUUID();
         const attachmentMeta = attachments?.length
-          ? await uploadAttachmentsForRecipient(ccRecipient, mailId, attachments)
+          ? await uploadAttachmentsForRecipient(addr, mailId, attachments)
           : [];
         await adminDb.collection("mails").doc(mailId).set({
           id: mailId,
+          // 실제 수신자가 보는 것과 같게 To/Cc 전체를 남긴다. 폴더 분류는 deliveredTo가 담당.
           to: toStr,
           ...(ccStr ? { cc: ccStr } : {}),
           from: fromEmail,
           subject,
           text: text ?? "",
-          html: trackedHtml,
+          html: (html ?? text ?? "") + pixel(recipient),
           date: sentAt,
           read: false,
           attachments: attachmentMeta,
           createdAt: sentAt,
-          deliveredTo: ccRecipient,
+          deliveredTo: addr,
         });
-        notify(ccRecipient, { from: fromEmail, subject, date: sentAt, mailId, text }).catch(() => {});
+        notify(addr, { from: fromEmail, subject, date: sentAt, mailId, text }).catch(() => {});
+      };
+
+      const deliverExternal = async (recipient: string) => {
+        const { error: sendError } = await resend!.emails.send({
+          from,
+          to: [recipient],
+          headers: visibleHeaders,
+          subject,
+          text: text ?? "",
+          html: (html ?? text ?? "") + pixel(recipient),
+          attachments: resendAttachments,
+        });
+        // Resend SDK는 API 오류를 throw하지 않고 error로 반환한다. 확인하지 않으면
+        // 발송이 거부돼도 성공 응답이 나가고 보낸편지함에만 기록이 남는다.
+        if (sendError) {
+          sendFailures.push(`${recipient}: ${sendError.message ?? String(sendError)}`);
+        }
+      };
+
+      // 받는사람·참조·숨은참조 전원에게 각자 사본을 보낸다. 예전에는 참조/숨은참조를 받는사람
+      // 발송 요청에 얹어 보냈는데, 그러면 받는사람이 전부 내부 주소일 때 외부 발송 자체가
+      // 일어나지 않아 외부 참조자에게 메일이 아예 가지 않았다. 반대로 외부 받는사람이 여럿이면
+      // 그 수만큼 참조자에게 중복 발송됐다. 수신자 단위로 한 번씩 돌면 양쪽 다 사라진다.
+      const delivered = new Set<string>();
+      for (const raw of [...toList, ...ccList, ...bccList]) {
+        const recipient = raw.trim();
+        if (!recipient) continue;
+        // 같은 사람이 받는사람엔 이름과 함께, 참조엔 주소만으로 적힐 수 있다. 중복 판정도
+        // 순수 주소로 해야 그 경우 사본이 두 번 가지 않는다.
+        const addr = bareAddress(recipient);
+        const dedupeKey = addr.toLowerCase();
+        if (delivered.has(dedupeKey)) continue;
+        delivered.add(dedupeKey);
+        if (addr.endsWith(`@${MAIL_DOMAIN}`)) await deliverInternal(addr, recipient);
+        else await deliverExternal(recipient);
       }
     }
 
@@ -345,7 +334,7 @@ export async function POST(req: NextRequest) {
         text: text ?? "",
         html: html ?? text ?? "",
         attachmentNames,
-        trackIds,
+        trackId,
       },
     });
   } catch (e) {

@@ -12,7 +12,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import {
   subscribeAllMails, selectMails, selectTrash, countInboxUnread, listImapFolders,
   searchMailsAdvanced, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
-  moveToTrash, restoreFromTrash, permanentDelete, getTrackingStatus,
+  moveToTrash, restoreFromTrash, permanentDelete, getTrackingStatus, isTrackable,
   DEFAULT_PAGE_SIZE,
   type Mail, type Draft, type TrackingStatus, type MailListOpts, type AdvancedSearchOpts,
 } from "@/lib/mail";
@@ -58,6 +58,7 @@ export default function MailPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [noLabelOnly, setNoLabelOnly] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState<Record<string, TrackingStatus> | null>(null);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
 
   // 라벨 상태
   const [labels, setLabels] = useState<Label[]>([]);
@@ -213,8 +214,9 @@ export default function MailPage() {
   useEffect(() => {
     setTrackingStatus(null);
     setShowLabelDropdown(false);
-    if (folder === "sent" && selected?.trackIds && Object.keys(selected.trackIds).length > 0) {
-      getTrackingStatus(selected.trackIds).then(setTrackingStatus);
+    setShowTrackingModal(false);
+    if (folder === "sent" && selected && (selected.trackId || selected.trackIds)) {
+      getTrackingStatus(selected).then(setTrackingStatus);
     }
   }, [selected, folder]);
 
@@ -1224,6 +1226,9 @@ export default function MailPage() {
                     )}
                     <button onClick={() => handleForward(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">전달</button>
                     <button onClick={() => downloadAsEml(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">다운로드</button>
+                    {folder === "sent" && (selected.trackId || selected.trackIds) && (
+                      <button onClick={() => setShowTrackingModal(true)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">수신확인</button>
+                    )}
 
                     {/* 라벨 드롭다운 */}
                     <div className="relative" ref={labelDropdownRef}>
@@ -1319,15 +1324,12 @@ export default function MailPage() {
                     return (
                       <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-0.5">
                         {email}
-                        {folder === "sent" && selected.trackIds && (
-                          ts === undefined && trackingStatus !== null ? null :
+                        {folder === "sent" && isTrackable(selected, email) && trackingStatus !== null && (
                           ts?.openedAt ? (
-                            <span className="text-green-600 font-medium" title={`읽음: ${new Date(ts.openedAt).toLocaleString("ko-KR")}`}>
-                              ✓ {new Date(ts.openedAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          ) : trackingStatus !== null ? (
-                            <span className="text-zinc-400">○ 미확인</span>
-                          ) : null
+                            <span className="text-green-600 font-medium" title={`읽음: ${new Date(ts.openedAt).toLocaleString("ko-KR")}`}>✓</span>
+                          ) : (
+                            <span className="text-zinc-400" title="미확인">○</span>
+                          )
                         )}
                         <button
                           onClick={() => setQuickAdd(parseEmailAddress(email))}
@@ -1345,18 +1347,29 @@ export default function MailPage() {
                 <div className="flex gap-2">
                   <span className="shrink-0">참조:</span>
                   <div className="flex flex-wrap gap-1">
-                    {selected.cc.split(",").map((addr, i) => (
+                    {selected.cc.split(",").map((addr, i) => {
+                      const email = addr.trim();
+                      const ts = trackingStatus?.[email];
+                      return (
                       <span key={i} className="flex items-center gap-1 bg-zinc-100 text-zinc-800 text-xs rounded-full px-2.5 py-0.5">
-                        {addr.trim()}
+                        {email}
+                        {folder === "sent" && isTrackable(selected, email) && trackingStatus !== null && (
+                          ts?.openedAt ? (
+                            <span className="text-green-600 font-medium" title={`읽음: ${new Date(ts.openedAt).toLocaleString("ko-KR")}`}>✓</span>
+                          ) : (
+                            <span className="text-zinc-400" title="미확인">○</span>
+                          )
+                        )}
                         <button
-                          onClick={() => setQuickAdd(parseEmailAddress(addr.trim()))}
+                          onClick={() => setQuickAdd(parseEmailAddress(email))}
                           title="연락처 추가"
                           className="text-zinc-300 hover:text-zinc-500 leading-none"
                         >
                           +
                         </button>
                       </span>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1580,6 +1593,42 @@ export default function MailPage() {
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteLabelConfirm(null)} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">취소</button>
               <button onClick={() => handleDeleteLabel(deleteLabelConfirm.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 수신확인 모달 */}
+      {showTrackingModal && selected && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowTrackingModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-zinc-900 mb-4">수신확인</h3>
+            <div className="flex flex-col gap-1 max-h-80 overflow-y-auto">
+              {[
+                ...selected.to.split(",").map((addr) => ({ email: addr.trim(), kind: "받는사람" })),
+                ...(selected.cc ?? "").split(",").filter(Boolean).map((addr) => ({ email: addr.trim(), kind: "참조" })),
+              ].filter((r) => r.email).map((r, i) => {
+                const trackable = isTrackable(selected, r.email);
+                const ts = trackingStatus?.[r.email];
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-zinc-50 last:border-0">
+                    <span className="text-xs text-zinc-400 w-12 shrink-0">{r.kind}</span>
+                    <span className="text-xs text-zinc-900 flex-1 truncate">{r.email}</span>
+                    {!trackable ? (
+                      <span className="text-xs text-zinc-300 shrink-0">추적 불가</span>
+                    ) : ts?.openedAt ? (
+                      <span className="text-xs text-green-600 font-medium shrink-0">
+                        ✓ {new Date(ts.openedAt).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-zinc-400 shrink-0">○ 미확인</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end mt-5">
+              <button onClick={() => setShowTrackingModal(false)} className="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50">닫기</button>
             </div>
           </div>
         </div>
