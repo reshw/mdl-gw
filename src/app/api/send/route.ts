@@ -2,99 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { notify } from "@/lib/notify";
+import { s3Put, DEFAULT_BUCKET } from "@/lib/attachment-storage";
 
 const USE_SMTP = process.env.MAIL_TRANSPORT === "smtp";
-
-const R2_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? "163aa19364534ce7386a3430efacb2a3";
-const R2_BUCKET = process.env.R2_BUCKET ?? "mailer-attachments";
-const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-
-async function sha256Hex(data: Uint8Array | string): Promise<string> {
-  const arr = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
-  const hash = await crypto.subtle.digest("SHA-256", arr);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hmacHex(key: ArrayBuffer, data: string): Promise<string> {
-  const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
-  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function hmacRaw(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
-  const k = key instanceof Uint8Array ? new Uint8Array(key) : key;
-  const cryptoKey = await crypto.subtle.importKey("raw", k, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(data));
-}
-
-async function deriveSigningKey(secret: string, date: string): Promise<ArrayBuffer> {
-  const kDate = await hmacRaw(new TextEncoder().encode(`AWS4${secret}`), date);
-  const kRegion = await hmacRaw(kDate, "auto");
-  const kService = await hmacRaw(kRegion, "s3");
-  return hmacRaw(kService, "aws4_request");
-}
-
-// encodeURIComponent는 !'()* 를 안전 문자로 보고 그대로 두지만, AWS SigV4 정규 URI 규칙은
-// 이 문자들도 퍼센트 인코딩해야 한다. 안 맞추면 R2가 자체 계산한 서명과 어긋나 파일명에
-// 괄호 등이 든 첨부에서만 SignatureDoesNotMatch가 난다.
-function awsUriEscape(str: string): string {
-  return encodeURIComponent(str).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-}
-
-async function uploadToR2(key: string, body: Uint8Array, contentType: string, bucket: string = R2_BUCKET): Promise<void> {
-  const data = new Uint8Array(body);
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID!;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY!;
-
-  const encodedPath = `/${bucket}/${key.split("/").map(awsUriEscape).join("/")}`;
-  const url = `${R2_ENDPOINT}${encodedPath}`;
-  const datetime = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const date = datetime.slice(0, 8);
-  const host = `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
-  const payloadHash = await sha256Hex(data);
-
-  const canonicalRequest = [
-    "PUT",
-    encodedPath,
-    "",
-    `content-type:${contentType}`,
-    `host:${host}`,
-    `x-amz-content-sha256:${payloadHash}`,
-    `x-amz-date:${datetime}`,
-    "",
-    signedHeaders,
-    payloadHash,
-  ].join("\n");
-
-  const credentialScope = `${date}/auto/s3/aws4_request`;
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    datetime,
-    credentialScope,
-    await sha256Hex(new TextEncoder().encode(canonicalRequest)),
-  ].join("\n");
-
-  const signingKey = await deriveSigningKey(secretAccessKey, date);
-  const signature = await hmacHex(signingKey, stringToSign);
-  const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": contentType,
-      "x-amz-date": datetime,
-      "x-amz-content-sha256": payloadHash,
-      Authorization: authorization,
-    },
-    body: data,
-  });
-
-  if (!res.ok) {
-    const resBody = await res.text();
-    throw new Error(`R2 업로드 실패 (${res.status}) url=${url} key=${accessKeyId.slice(0,8)}…: ${resBody}`);
-  }
-}
 
 async function uploadAttachmentsForRecipient(
   recipient: string,
@@ -108,7 +18,7 @@ async function uploadAttachmentsForRecipient(
       if (!att.content) return null;
       const body = Uint8Array.from(atob(att.content), (c) => c.charCodeAt(0));
       const key = `${recipient}/${mailId}/${filename}`;
-      await uploadToR2(key, body, contentType);
+      await s3Put(key, body, contentType);
       return { name: filename, contentType, size: body.byteLength, r2Key: key };
     })
   );
@@ -146,9 +56,11 @@ export async function POST(req: NextRequest) {
   const { to, cc, bcc, subject, text, html, attachments } = await req.json();
   if (!to || !subject) return NextResponse.json({ error: "받는 사람과 제목을 입력해주세요." }, { status: 400 });
 
-  // R2 env var 사전 체크
-  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
-    const missing = ["CLOUDFLARE_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].filter(k => !process.env[k]);
+  // 스토리지 env var 사전 체크 — 호스트는 CLOUDFLARE_ACCOUNT_ID(R2) 또는 S3_ENDPOINT_HOST(그 외 S3
+  // 호환 공급자) 둘 중 하나만 있으면 된다.
+  if (attachments?.length && (!process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || (!process.env.CLOUDFLARE_ACCOUNT_ID && !process.env.S3_ENDPOINT_HOST))) {
+    const missing = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].filter(k => !process.env[k]);
+    if (!process.env.CLOUDFLARE_ACCOUNT_ID && !process.env.S3_ENDPOINT_HOST) missing.push("CLOUDFLARE_ACCOUNT_ID 또는 S3_ENDPOINT_HOST");
     return NextResponse.json({ error: `서버 설정 오류: 환경변수 누락 — ${missing.join(", ")}` }, { status: 500 });
   }
 
@@ -198,7 +110,7 @@ export async function POST(req: NextRequest) {
 
       // 첨부파일을 R2에 업로드 (base64를 Firestore에 직접 넣지 않음 — 1MB 제한 회피)
       // 데몬이 R2에서 내려받아 OneDrive에 영구 보관 후 SMTP 발송, R2는 발송 완료 후 삭제
-      const smtpBucket = process.env.CF_R2_BUCKET ?? R2_BUCKET;
+      const smtpBucket = process.env.CF_R2_BUCKET ?? DEFAULT_BUCKET;
       const queueAttachments = attachments?.length
         ? await Promise.all(
             (attachments as { filename?: string; content?: string; content_type?: string }[]).map(async (a) => {
@@ -207,7 +119,7 @@ export async function POST(req: NextRequest) {
               if (!a.content) return { filename, r2Key: null, contentType, size: 0 };
               const body = Uint8Array.from(atob(a.content), (c) => c.charCodeAt(0));
               const r2Key = `mailAttachments/${jobId}/${filename}`;
-              await uploadToR2(r2Key, body, contentType, smtpBucket);
+              await s3Put(r2Key, body, contentType, smtpBucket);
               return { filename, r2Key, contentType, size: body.byteLength };
             })
           )
