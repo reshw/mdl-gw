@@ -61,9 +61,6 @@ export interface Mail {
   /** 같은 테넌트 내부 발송 시 수신자 몫으로 직접 써지는 문서에 붙는다(from은 여전히 발신자).
    *  발신자 세션에서 "내 sent 문서"와 구분하는 유일한 표식이다. */
   deliveredTo?: string;
-  /** 같은 Message-ID가 여러 계정에 동시에 오는 사내 공지메일 등, 한 문서를 여러 명이 공유할 때
-   *  받는 사람 전원이 여기 쌓인다(deliveredTo는 최초 아카이빙한 계정만 기록). */
-  deliveredToList?: string[];
 }
 
 export interface MailListOpts {
@@ -92,21 +89,19 @@ export const DEFAULT_PAGE_SIZE = 50;
 
 // 이 앱이 보는 메일 전체를 한 번만 구독한다. 받은편지함/보낸편지함/휴지통/안읽음 뱃지/
 // IMAP 폴더 목록/검색이 전부 이 결과에서 파생되므로, 예전처럼 같은 컬렉션을 5번 읽지 않는다.
-// deliveredTo/deliveredToList/from은 서로 다른 필드라 한 쿼리로 못 묶으므로 리스너 세 개를 머지한다.
+// deliveredTo와 from은 서로 다른 필드라 한 쿼리로 못 묶으므로 리스너 두 개를 머지한다.
 export function subscribeAllMails(
   email: string,
   callback: (mails: Mail[]) => void,
   onError: (message: string) => void
 ): Unsubscribe {
   let received: Mail[] | null = null;
-  let receivedList: Mail[] | null = null;
   let sent: Mail[] | null = null;
 
   function emit() {
-    // 세 스냅샷이 다 와야 목록이 완전해진다
-    if (received === null || receivedList === null || sent === null) return;
+    if (received === null || sent === null) return; // 양쪽 첫 스냅샷이 다 와야 목록이 완전해진다
     const byId = new Map<string, Mail>();
-    for (const m of [...received, ...receivedList, ...sent]) byId.set(m.id, m);
+    for (const m of [...received, ...sent]) byId.set(m.id, m);
     callback([...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
 
@@ -122,14 +117,6 @@ export function subscribeAllMails(
     (snap) => { received = toMails(snap); emit(); },
     fail
   );
-  // 같은 Message-ID로 여러 계정에 동시에 오는 사내 공지메일 등, 한 문서를 여러 명이 공유하는
-  // 경우 deliveredToList 배열에 전원이 쌓인다 — 최초 아카이빙한 계정만 기록되는 deliveredTo
-  // 하나만 봐서는 나머지 수신자 받은편지함에서 안 보인다.
-  const unsub1b = onSnapshot(
-    query(mailsCollection(email), where("deliveredToList", "array-contains", email)),
-    (snap) => { receivedList = toMails(snap); emit(); },
-    fail
-  );
   const unsub2 = onSnapshot(
     query(mailsCollection(email), where("from", "==", email)),
     (snap) => {
@@ -141,7 +128,7 @@ export function subscribeAllMails(
     fail
   );
 
-  return () => { unsub1(); unsub1b(); unsub2(); };
+  return () => { unsub1(); unsub2(); };
 }
 
 // 아래 select*/count* 는 전부 subscribeAllMails 결과를 받는 순수 함수다 — Firestore를 다시 읽지 않는다.

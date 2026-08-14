@@ -652,7 +652,10 @@ export default function MailPage() {
         m.subject.toLowerCase().includes(q) ||
         m.from.toLowerCase().includes(q) ||
         m.to.toLowerCase().includes(q) ||
-        (m.text ?? "").toLowerCase().includes(q)
+        (m.text ?? "").toLowerCase().includes(q) ||
+        // 첨부 파일명도 검색 대상 — 오브젝트 스토리지(R2/B2)는 prefix 나열만 되고 파일명
+        // 부분검색이 없어서, "계약서" 같은 검색은 여기 메타데이터로만 가능하다.
+        (m.attachments ?? []).some((a) => a.name?.toLowerCase().includes(q))
       )
     : currentMails;
 
@@ -948,7 +951,7 @@ export default function MailPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setAdvancedResults(null); }}
-              placeholder="검색 (보낸사람, 제목, 내용)"
+              placeholder="검색 (보낸사람, 제목, 내용, 첨부파일명)"
               className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 text-black placeholder-zinc-400 outline-none focus:border-zinc-400"
             />
             {(folder === "inbox" || folder === "sent") && (
