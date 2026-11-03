@@ -103,7 +103,7 @@ export default function RichEditor({ value, onChange }: Props) {
       "bold", "italic", "underline", "strikethrough", "|",
       "font", "brush", "|",
       "ul", "ol", "|",
-      "align", "|",
+      "align", "lineHeight", "|",
       "link", "image", "table", "|",
       "source",
     ],
