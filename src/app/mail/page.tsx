@@ -10,9 +10,10 @@ import { signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
-  subscribeAllMails, selectMails, selectTrash, countInboxUnread, listImapFolders,
+  subscribeAllMails, selectMails, selectTrash, selectSpam, countInboxUnread, listImapFolders,
   searchMailsAdvanced, markAsRead, markAsUnread, subscribeDrafts, deleteDraft,
   moveToTrash, restoreFromTrash, permanentDelete, getTrackingStatus, isTrackable,
+  markAsSpam, markAsNotSpam,
   DEFAULT_PAGE_SIZE,
   type Mail, type Draft, type TrackingStatus, type MailListOpts, type AdvancedSearchOpts,
 } from "@/lib/mail";
@@ -25,11 +26,12 @@ import {
 } from "@/lib/labels";
 import { subscribeRules, applyRulesToMail, type MailRule } from "@/lib/rules";
 import { addPersonalContact } from "@/lib/contacts";
+import { addSpamBlock, removeSpamBlock, senderAddress, SPAM_REASON_LABEL } from "@/lib/spam";
 
 // 작성 에디터(Jodit)는 무겁고 목록 볼 때는 필요 없어서, 작성창을 열 때만 불러온다.
 const ComposeModal = dynamic(() => import("@/components/ComposeModal"), { ssr: false });
 
-type Folder = "inbox" | "sent" | "draft" | "trash";
+type Folder = "inbox" | "sent" | "draft" | "spam" | "trash";
 
 export default function MailPage() {
   const { user, loading, mailEmail, isAdmin, dbReady } = useAuth();
@@ -201,7 +203,7 @@ export default function MailPage() {
     if (!mailEmail || rules.length === 0) return;
     const ruleIds = rules.map((r) => r.id);
     const pending = allMails.filter((m) => {
-      if (m.type === "sent" || m.trash) return false;
+      if (m.type === "sent" || m.trash || m.spam) return false;
       const applied = (m as Mail & { appliedRules?: string[] }).appliedRules ?? [];
       return ruleIds.some((id) => !applied.includes(id));
     });
@@ -464,6 +466,58 @@ export default function MailPage() {
     await moveToTrash(mail.id, mailEmail!);
   }
 
+  function showToast(msg: string) {
+    if (downloadToastTimer.current) clearTimeout(downloadToastTimer.current);
+    setDownloadToast(msg);
+    downloadToastTimer.current = setTimeout(() => setDownloadToast(null), 4000);
+  }
+
+  // 스팸 신고 = 스팸함으로 옮기고 보낸 주소를 차단 목록에 올린다. 이후 그 주소의 메일은
+  // 수신 워커가 바로 스팸함에 넣는다. 차단 등록이 실패해도 이동은 이미 끝난 상태로 둔다.
+  async function reportSpam(mails: Mail[]): Promise<string> {
+    await Promise.all(mails.map((m) => markAsSpam(m.id, mailEmail!)));
+    const senders = [...new Set(mails.map((m) => senderAddress(m.from)).filter((a) => a.includes("@")))];
+    const results = await Promise.allSettled(senders.map((a) => addSpamBlock(a)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    const blocked = senders.length - failed;
+    const head = mails.length === 1 ? "스팸함으로 옮겼습니다." : `${mails.length}건을 스팸함으로 옮겼습니다.`;
+    const tail = senders.length === 1 && blocked === 1 ? ` 앞으로 ${senders[0]} 메일은 스팸함으로 갑니다.`
+      : blocked > 0 ? ` 발신자 ${blocked}곳을 차단했습니다.` : "";
+    return head + tail + (failed > 0 ? ` (차단 등록 ${failed}건 실패)` : "");
+  }
+
+  // 스팸 아님 = 받은편지함으로 되돌리고 그 발신 주소의 차단을 푼다(도메인 차단은 설정에서 푼다).
+  async function unmarkSpam(mails: Mail[]): Promise<string> {
+    await Promise.all(mails.map((m) => markAsNotSpam(m.id, mailEmail!)));
+    const senders = [...new Set(mails.map((m) => senderAddress(m.from)).filter((a) => a.includes("@")))];
+    await Promise.allSettled(senders.map((a) => removeSpamBlock(a)));
+    return mails.length === 1 ? "받은편지함으로 옮겼습니다." : `${mails.length}건을 받은편지함으로 옮겼습니다.`;
+  }
+
+  async function handleReportSpam(mail: Mail) {
+    setSelected(null);
+    showToast(await reportSpam([mail]));
+  }
+
+  async function handleNotSpam(mail: Mail) {
+    setSelected(null);
+    showToast(await unmarkSpam([mail]));
+  }
+
+  async function handleBulkReportSpam() {
+    const targets = allMails.filter((m) => checkedIds.has(m.id));
+    if (selected && checkedIds.has(selected.id)) setSelected(null);
+    setCheckedIds(new Set());
+    showToast(await reportSpam(targets));
+  }
+
+  async function handleBulkNotSpam() {
+    const targets = allMails.filter((m) => checkedIds.has(m.id));
+    if (selected && checkedIds.has(selected.id)) setSelected(null);
+    setCheckedIds(new Set());
+    showToast(await unmarkSpam(targets));
+  }
+
   async function handleRestore(mail: Mail) {
     setSelected(null);
     await restoreFromTrash(mail.id, mailEmail!);
@@ -603,7 +657,7 @@ export default function MailPage() {
     } else {
       setActiveLabel(labelId);
       setActiveImapFolder(null);
-      if (folder === "draft" || folder === "trash") setFolder("inbox");
+      if (folder === "draft" || folder === "trash" || folder === "spam") setFolder("inbox");
       setSelected(null);
       setCheckedIds(new Set());
     }
@@ -617,7 +671,7 @@ export default function MailPage() {
     } else {
       setActiveImapFolder(folderName);
       setActiveLabel(null);
-      if (folder === "draft" || folder === "trash") setFolder("inbox");
+      if (folder === "draft" || folder === "trash" || folder === "spam") setFolder("inbox");
       setSelected(null);
       setCheckedIds(new Set());
     }
@@ -629,6 +683,7 @@ export default function MailPage() {
     inbox: "받은편지함",
     sent: "보낸편지함",
     draft: "임시보관함",
+    spam: "스팸함",
     trash: "휴지통",
   };
 
@@ -637,10 +692,13 @@ export default function MailPage() {
   const inboxUnread = countInboxUnread(allMails);
   const imapFolders = listImapFolders(allMails);
   const trashMails = selectTrash(allMails);
+  const spamMails = selectSpam(allMails);
 
   // 상세검색 결과가 있으면 그걸, 없으면 현재 폴더 전체를 대상으로 삼는다.
   const currentMails = folder === "trash"
     ? trashMails
+    : folder === "spam"
+    ? spamMails
     : advancedResults ?? selectMails(allMails, {
         folder: folder as "inbox" | "sent",
         imapFolder: activeImapFolder,
@@ -713,7 +771,7 @@ export default function MailPage() {
         <div className="text-sm font-semibold text-zinc-900 mb-4">{process.env.NEXT_PUBLIC_APP_NAME ?? `${process.env.NEXT_PUBLIC_MAIL_DOMAIN ?? "mdl.kr"} 메일`}</div>
 
         {/* 폴더 목록 */}
-        {(["inbox", "sent", "draft", "trash"] as Folder[]).map((f) => (
+        {(["inbox", "sent", "draft", "spam", "trash"] as Folder[]).map((f) => (
           <button
             key={f}
             onClick={() => { setFolder(f); setActiveLabel(null); setActiveImapFolder(null); setMobilePane("list"); setTimeout(() => setShowMobileSidebar(false), 150); }}
@@ -728,6 +786,11 @@ export default function MailPage() {
             {f === "draft" && drafts.length > 0 && (
               <span className="ml-2 text-xs bg-zinc-400 text-white rounded-full px-1.5 py-0.5">
                 {drafts.length}
+              </span>
+            )}
+            {f === "spam" && spamMails.length > 0 && (
+              <span className="ml-2 text-xs bg-zinc-400 text-white rounded-full px-1.5 py-0.5">
+                {spamMails.length}
               </span>
             )}
             {f === "trash" && trashMails.length > 0 && (
@@ -924,6 +987,11 @@ export default function MailPage() {
                 <button onClick={handleBulkDownload} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">다운로드</button>
                 <button onClick={handleBulkPermanentDelete} className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50">영구삭제</button>
               </>
+            ) : folder === "spam" ? (
+              <>
+                <button onClick={handleBulkNotSpam} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">스팸 아님</button>
+                <button onClick={handleBulkTrash} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">삭제</button>
+              </>
             ) : folder === "draft" ? (
               <button onClick={handleBulkDeleteDraft} className="text-xs px-2 py-1 rounded border border-red-200 text-red-500 hover:bg-red-50">삭제</button>
             ) : (
@@ -939,6 +1007,9 @@ export default function MailPage() {
                   );
                 })()}
                 <button onClick={handleBulkDownload} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">다운로드</button>
+                {folder === "inbox" && (
+                  <button onClick={handleBulkReportSpam} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">스팸 신고</button>
+                )}
                 <button onClick={handleBulkTrash} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">삭제</button>
                 <button onClick={handleBulkCompose} className="text-xs px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:bg-white">단체발송</button>
               </>
@@ -1059,7 +1130,7 @@ export default function MailPage() {
             <MailListSkeleton label={`${folderLabel[folder]}을 불러오는 중`} />
           ) : displayedMails.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-zinc-400">
-              {advancedResults !== null ? "상세검색 결과가 없습니다." : q ? "검색 결과가 없습니다." : activeLabel ? "이 라벨의 메일이 없습니다." : { inbox: "받은 메일이 없습니다.", sent: "보낸 메일이 없습니다.", trash: "휴지통이 비어있습니다.", draft: "" }[folder]}
+              {advancedResults !== null ? "상세검색 결과가 없습니다." : q ? "검색 결과가 없습니다." : activeLabel ? "이 라벨의 메일이 없습니다." : { inbox: "받은 메일이 없습니다.", sent: "보낸 메일이 없습니다.", trash: "휴지통이 비어있습니다.", spam: "스팸함이 비어있습니다.", draft: "" }[folder]}
             </div>
           ) : (
             <>
@@ -1217,6 +1288,11 @@ export default function MailPage() {
                     <button onClick={() => handleRestore(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">복원</button>
                     <button onClick={() => handlePermanentDelete(selected)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 active:bg-red-100">영구 삭제</button>
                   </>
+                ) : folder === "spam" ? (
+                  <>
+                    <button onClick={() => handleNotSpam(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">스팸 아님</button>
+                    <button onClick={(e) => handleTrash(selected, e)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">삭제</button>
+                  </>
                 ) : (
                   <>
                     {folder === "inbox" && (
@@ -1269,6 +1345,9 @@ export default function MailPage() {
                       )}
                     </div>
 
+                    {folder === "inbox" && (
+                      <button onClick={() => handleReportSpam(selected)} className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 active:bg-zinc-100">스팸 신고</button>
+                    )}
                     <button
                       onClick={(e) => handleTrash(selected, e)}
                       className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200"
@@ -1279,6 +1358,12 @@ export default function MailPage() {
                 )}
               </div>
             </div>
+
+            {folder === "spam" && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                스팸으로 분류된 메일입니다{selected.spamReason ? ` — ${SPAM_REASON_LABEL[selected.spamReason] ?? selected.spamReason}` : ""}. 링크를 누르거나 첨부를 열지 마세요.
+              </div>
+            )}
 
             {/* 라벨 칩 표시 */}
             {(selected.labels?.length ?? 0) > 0 && (

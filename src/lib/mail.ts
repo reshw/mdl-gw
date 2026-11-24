@@ -50,6 +50,9 @@ export interface Mail {
   failed?: boolean;
   failReason?: string;
   trash?: boolean;
+  /** 스팸함. 수신 워커가 판정하거나(blocked: 차단 발신자, auth: 발신자 인증 실패) 사용자가 신고(user)한다. */
+  spam?: boolean;
+  spamReason?: "blocked" | "auth" | "user";
   firstReadAt?: string;
   /** 열람 추적 id — 메일당 하나. 수신자 구분은 픽셀 URL의 주소로 한다. */
   trackId?: string;
@@ -135,7 +138,7 @@ export function subscribeAllMails(
 
 export function selectMails(all: Mail[], opts: MailListOpts): Mail[] {
   return all.filter((m) => {
-    if (m.trash) return false;
+    if (m.trash || m.spam) return false;
     if (opts.folder === "sent" ? m.type !== "sent" : m.type === "sent") return false;
     if (opts.imapFolder && m.folder !== opts.imapFolder) return false;
     if (opts.labelId && !m.labels?.includes(opts.labelId)) return false;
@@ -147,8 +150,13 @@ export function selectTrash(all: Mail[]): Mail[] {
   return all.filter((m) => m.trash);
 }
 
+// 휴지통이 우선이다 — 스팸함에서 삭제하면 휴지통에만 보인다.
+export function selectSpam(all: Mail[]): Mail[] {
+  return all.filter((m) => m.spam && !m.trash);
+}
+
 export function countInboxUnread(all: Mail[]): number {
-  return all.filter((m) => !m.trash && m.type !== "sent" && !m.read).length;
+  return all.filter((m) => !m.trash && !m.spam && m.type !== "sent" && !m.read).length;
 }
 
 export function listImapFolders(all: Mail[]): string[] {
@@ -222,6 +230,14 @@ export async function moveToTrash(mailId: string, email: string) {
 
 export async function restoreFromTrash(mailId: string, email: string) {
   await updateDoc(mailDoc(email, mailId), { trash: false });
+}
+
+export async function markAsSpam(mailId: string, email: string) {
+  await updateDoc(mailDoc(email, mailId), { spam: true, spamReason: "user", read: true });
+}
+
+export async function markAsNotSpam(mailId: string, email: string) {
+  await updateDoc(mailDoc(email, mailId), { spam: false });
 }
 
 export async function permanentDelete(mailId: string, email: string) {

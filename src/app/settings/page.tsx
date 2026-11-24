@@ -17,6 +17,7 @@ import { PAGE_SIZE_OPTIONS } from "@/lib/mail";
 import { getPageSize, setPageSize, getUiFont, setUiFont, UI_FONT_OPTIONS, type UiFont } from "@/lib/ui-prefs";
 
 // 서명 탭에서만 쓰는 무거운 에디터라 다른 탭을 볼 때는 불러오지 않는다.
+const SpamBlockSettings = dynamic(() => import("@/components/SpamBlockSettings"), { ssr: false });
 const RichEditor = dynamic(() => import("@/components/RichEditor"), { ssr: false });
 
 const FONT_LABELS: Record<UiFont, string> = { lineseed: "라인시드", pretendard: "프리텐다드" };
@@ -25,7 +26,7 @@ const FONT_STACKS: Record<UiFont, string> = {
   pretendard: "'Pretendard', Arial, Helvetica, sans-serif",
 };
 
-type Tab = "signature" | "display" | "password" | "notifications" | "account" | "connection" | "rules";
+type Tab = "signature" | "display" | "password" | "notifications" | "account" | "connection" | "rules" | "spam";
 const USE_SMTP = process.env.NEXT_PUBLIC_MAIL_TRANSPORT === "smtp";
 
 export default function SettingsPage() {
@@ -349,6 +350,12 @@ export default function SettingsPage() {
         >
           분류 규칙
         </button>
+        <button
+          onClick={() => setTab("spam")}
+          className={`text-left text-sm px-3 py-2 rounded-lg ${tab === "spam" ? "bg-zinc-100 text-zinc-900 font-medium" : "text-zinc-600 hover:bg-zinc-50"}`}
+        >
+          스팸 차단
+        </button>
         {USE_SMTP && (
           <button
             onClick={() => setTab("connection")}
@@ -385,6 +392,8 @@ export default function SettingsPage() {
             </section>
           </>
         )}
+
+        {tab === "spam" && <SpamBlockSettings />}
 
         {tab === "display" && (
           <>
